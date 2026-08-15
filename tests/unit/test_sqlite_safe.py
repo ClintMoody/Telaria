@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from talaria.sqlite_safe import (
+from talaria.engine.sqlite_snap import (
     SqliteSnapshotError,
     is_sqlite_file,
     is_zeroed_sqlite,
@@ -133,7 +133,7 @@ class TestVerify:
         """Above the cap we do the O(1) schema probe instead of full integrity_check."""
         db = tmp_path / "big.db"
         _make_db(db)
-        import talaria.sqlite_safe as mod
+        import talaria.engine.sqlite_snap as mod
 
         monkeypatch.setattr(mod, "FULL_CHECK_MAX_BYTES", 1)
         ok, detail = verify_integrity(db)
