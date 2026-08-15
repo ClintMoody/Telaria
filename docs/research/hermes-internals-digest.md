@@ -79,17 +79,40 @@ version-pinned hash manifest.
 - Cron: built-in scheduler (`cron/` package: jobs, scheduler_provider, executions, monitor…) with
   delivery to platforms; `plugins/cron_providers/`.
 
-## 5. Subsystem reports
+## 5. Subsystem reports (all complete)
 
-Deep-dive reports live alongside this digest:
+Deep-dive reports live alongside this digest — read them before designing any engine:
 
-- `subsystem-state-layout.md` — every path Hermes reads/writes, per-OS, with env overrides
-- `subsystem-skills-plugins.md` — skill anatomy, overlay rules, index cache, provenance options
-- `subsystem-cron.md` — job store schema, providers, OS registration, dependency extraction
-- `subsystem-integrations.md` — gateway/MCP/providers/browser/dashboard state classification
-- `subsystem-install-update.md` — installers, layouts per platform, version detection, desktop app
+- `subsystem-state-layout.md` — definitive HERMES_HOME map, credentials matrix, DB handling,
+  migrate/never-migrate lists, 12 scanner traps
+- `subsystem-skills-plugins.md` — `.bundled_manifest` stock baseline, no-overlay seeding model,
+  `.usage.json` provenance, hub lock.json, curator interactions, plugin state
+- `subsystem-cron.md` — jobs.json schema incl. runtime claim fields to scrub, in-process ticker
+  (no OS cron), gateway service re-registration, TZ trap, preflight mirrors
+- `subsystem-integrations.md` — per-platform (a/b/c/d) classification, MCP enumeration recipe,
+  Camoufox user_id trap, post-restore checklist actions
+- `subsystem-install-update.md` — install layouts per platform, install-method detection
+  algorithm, lazy-extras probing, restore recipe, traps table
 
-(Reports are committed as they are produced by the research sweep.)
+Also: `hermes-backup-precedent.md`, `competitor-teardown.md`, `m2c1-adoption.md`.
+
+### Headline cross-cutting findings
+
+1. **Stock diffing is half-solved upstream**: `~/.hermes/skills/.bundled_manifest` (name:md5 of
+   last-seeded bundled skill) is the baseline; `hermes skills list-modified --json` exists. The
+   code checkout is a git clone → `git status`/`diff` is exact for repo files. Our tool adds:
+   cross-version stock reconstruction, non-skill config diffing, and report UX.
+2. **Nothing records lazy-installed provider extras** — must be probed from the source venv and
+   re-provisioned on target.
+3. **Machine-bound state is a first-class category** with documented incidents (gateway_state
+   NS-508; WhatsApp device unlinking; Camoufox path-derived identity silently orphaning logins).
+4. **Everything OS-registered (systemd/launchd/schtasks/.vbs/.desktop, registry) must be
+   regenerated via `hermes gateway install`, never copied** — units bake absolute paths.
+5. **Secrets are plaintext files everywhere** (no OS keyring): .env, auth.json, mcp-tokens/,
+   platform token files, pairing stores — a coherent (d)-class handling policy is mandatory.
+6. **The applier must emit a post-restore action checklist** (re-pair, reauth, re-enroll,
+   re-register, reinstall MCPs, npm install bridge, hermes doctor) — some steps are inherently
+   interactive (QR scans) and cannot be automated.
 
 ## 6. Hard requirements these facts impose on the tool
 
