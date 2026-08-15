@@ -13,6 +13,7 @@ let state = {};
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
     if (k === "class") node.className = v;
     else if (k === "html") node.innerHTML = v; /* only with escaped/static input */
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
@@ -25,7 +26,12 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 const esc = (s) => String(s ?? "");
-const mib = (b) => (b / 1048576).toFixed(1) + " MiB";
+const mib = (b) => {
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + " GiB";
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + " MiB";
+  if (b >= 1024) return (b / 1024).toFixed(0) + " KiB";
+  return b + " B";
+};
 
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -360,7 +366,7 @@ function screenApplyT2() {
       el("h1", {}, blocked ? "Not yet — fix the blockers first" : "This machine is ready"),
       ...sections),
     el("div", { class: "card" },
-      el("h2", {}, "Move everything in?"),
+      el("h2", {}, "Ready when you are"),
       el("p", { class: "muted small" },
         "Applying a bundle installs things this machine will run (skills, scripts, ",
         "plugins, MCP commands) and covers the disclosed lists above. A full safety ",
@@ -396,10 +402,6 @@ function screenApplyT4() {
       el("p", {}, el("code", {}, esc(outcome.journal)))));
     return;
   }
-  const checklist = ((state.pack || {}).checklist_items) ||
-    (state.preflight ? [] : []);
-  const cards = [];
-  for (const item of (outcome.checklist_cards || [])) { cards.push(item); }
   render(el("div", {},
     el("div", { class: "card" },
       el("div", { class: "step-label" }, "Step 4 of 4 · Done"),
@@ -443,6 +445,19 @@ function secretPasteRows() {
   const rows = items.length ? items
     : [{ name: "OPENROUTER_API_KEY" }, { name: "TELEGRAM_BOT_TOKEN" }];
   for (const item of rows) {
+    const isFile = item.name.includes(".") || item.name.includes("/");
+    if (isFile) {
+      // File-shaped secrets (auth.json, token stores) can't be pasted into .env —
+      // they move by hand, and only if wanted.
+      wrap.append(el("div", { class: "check-card" },
+        el("input", { type: "checkbox" }),
+        el("div", { class: "body" },
+          el("code", {}, esc(item.name)),
+          el("div", { class: "muted small" },
+            "a credential file — copy it from the old machine yourself if you ",
+            "want it (or just log in again here: usually easier)"))));
+      continue;
+    }
     const input = el("input", { type: "password", placeholder: "paste value…" });
     const btn = el("button", { class: "btn", onclick: async () => {
       try {
