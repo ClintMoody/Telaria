@@ -66,6 +66,7 @@ Every contested point, with ruling and one-line rationale. CH = committee change
 | D28 | GUI progress transport = **polling** (`GET /api/events?after=seq`) over the same ndjson event stream the CLI prints; SSE not used in v1 | Simplest robust stdlib mechanism; one event stream, two frontends (P2 §10) |
 | D29 | Inline config.yaml credential values: **omit the key in stage + checklist card**; `${env:VAR}` promotion only where interpolation is documented (`mcp_servers`) or venv-verified | Placeholders in non-interpolated keys hand Hermes a literal string and a distant auth failure (C2-16 over C1 SEC-04's placeholder option) |
 | D30 | Constraint challenges: **none** from any proposal or critic. Adopted wording precisions: constraint 4 reads "any Python launches it (2.7-parseable stub message); 3.9+ runs it"; constraint 6 extended per D20 | All eight constraints survived adversarial review (P1 §18, P2 §16, P3 §15, P4 §14, C1/C2/C3) |
+| D31 | Manifest placement (implementation arbitration): `manifest.stub.json` (eternal header only, STORED) is the FIRST member; the complete `manifest.json` (STORED) is the LAST member. Readers use the central directory; stream/salvage tooling reads the stub off the front | ARCH §3.1's "manifest first" and R-PACK-01's "hash in the same zip-write pass" are mutually exclusive with stdlib zipfile — full manifest content (hashes) exists only after payload streaming. The stub preserves both intents: eternal header up front, single-pass hashing intact |
 
 ## 3. Requirements
 
