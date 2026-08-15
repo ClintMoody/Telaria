@@ -1,340 +1,275 @@
-# C2 — Cross-Platform & Correctness Adversary: Committee Critique
+# C2 — Cross-Platform & Correctness Adversary Review
 
-Role: attack feasibility and correctness of P1–P4 across Windows / macOS / Linux / Termux, the
-stdlib-only promise, the 3.9 floor, zipapp constraints, and multi-GB performance.
+Reviewer: Cross-platform & correctness lens. Inputs: all four proposals (P1–P4), all eight
+research docs, spot-verification against the hermes-agent clone where a claim is load-bearing
+(cited as `verified: <file:line>`). Verdicts: **ACCEPT** (sound) · **MODIFY** (workable but the
+stated design breaks a real scenario; change required) · **REJECT** (unimplementable/incorrect as
+proposed; replacement given) · **GAP** (no proposal covers it; new requirement).
 
-Method: all four proposals and all eight research docs read in full; contested claims
-spot-verified against the hermes-agent clone. Verified in source this session:
-`tools/skills_sync.py:254-266` (`_dir_hash` hashes `str(relative_to)` over `sorted(Path)`),
-`cron/jobs.py::save_job_output` (timestamps `%Y-%m-%d_%H-%M-%S`, colon-free),
-`agent/curator_backup.py:143` (backup dir names use `isoformat()` → colons),
-`gateway/status.py:741` + `gateway/run.py:10710` (upstream's own warning that `os.kill(pid, 0)`
-on Windows is NOT a no-op; they use ctypes `OpenProcess`). Also demonstrated in a live
-interpreter: `sorted([PureWindowsPath('B/x'), PureWindowsPath('a/x')])` orders case-insensitively
-and `str()` yields backslashes — both diverge from POSIX.
-
-Overall: the four proposals are strong and mutually reinforcing on transaction mechanics, SQLite,
-and machine-bound hygiene. But **all four are silent on filesystem *name* portability** (reserved
-names, case-fold collisions, >260-char paths, NFC/NFD), one flagship P2 claim is provably wrong
-cross-OS (`.bundled_manifest` reuse), one P3 preflight check is unimplementable as written on
-stdlib Windows (IANA timezone comparison), and one naive implementation of PF-01 would *kill the
-user's gateway*. Exit codes and schema-acceptance rules contradict across proposals and must be
-unified before any code lands.
+Severity: findings C2-01..C2-04 are ship-blockers; C2-05..C2-12 are correctness bugs that will
+occur in the field; the rest are precision fixes.
 
 ## Verdict table
 
-| # | Element | Source | Verdict | Required change (summary) |
+| # | Element | Source | Verdict | Required change (summary — details below) |
 |---|---|---|---|---|
-| 1 | Filename-portability gate (reserved names, invalid chars, trailing dot/space) | absent from all | **REJECT (omission)** | New pack-time predictive + apply-time gating check; rename/skip decisions recorded (F1) |
-| 2 | Windows >260-char path handling | absent from all | **REJECT (omission)** | `\\?\`-prefixed absolute paths for every FS op on Windows, both pack and apply; stage-prefix length math in preflight (F2) |
-| 3 | Case-fold + Unicode-normalization collision detection | absent from all | **REJECT (omission)** | Pack-time casefold/NFC collision scan recorded in manifest; apply-time target-FS probe; normalized conflict matching (F3) |
-| 4 | PF-01 gateway liveness probe | P3 §3 | **MODIFY** | Mechanism must be specified: ctypes `OpenProcess`/`tasklist` on Windows — naive `os.kill(pid,0)` terminates the gateway (F4) |
-| 5 | "Reuse `.bundled_manifest` MD5 bit-exactly" for provenance | P2 §3, P1 §5 | **MODIFY** | Hash is OS-dependent (separator + sort order). Compute provenance on source only; add apply-side manifest **rebaseline op** for pristine skills on cross-OS moves (F5) |
-| 6 | PF-10 timezone comparison | P3 §3, P1 §10.1 | **MODIFY** | IANA zone names are unavailable via stdlib on Windows (no tzdata, no local-zone name). Record zone name + UTC offset at pack; compare offsets as fallback (F6) |
-| 7 | JSON/dotenv/YAML rewrite editors | P3 §8.3 | **MODIFY** | Must read `utf-8-sig` (BOM'd jobs.json breaks `json.loads`), preserve CRLF/LF per file (`newline=''`), match upstream `ensure_ascii` (F7) |
-| 8 | T1 rollback on first op error | P3 §2.4 | **MODIFY** | Bounded retry (3×, backoff) on Windows sharing violations / EACCES before triggering full rollback — AV/indexer locks are transient (F8) |
-| 9 | Zipapp asset loading | P1 §4, P2 §14 (implied) | **MODIFY** | Explicit contract: all assets/templates via `importlib.resources.files()`/`pkgutil.get_data`; no `__file__`-relative reads anywhere (F9) |
-| 10 | Streaming zip writes for multi-GB members | P2 §16 | **ACCEPT + SPEC** | `ZipFile.open(name,'w',force_zip64=True)` for unknown-size streams; hash while streaming; zip64 always on (F9) |
-| 11 | Python 3.9 floor | all | **ACCEPT + SPEC** | Ban PEP 604 unions, `match`, `tomllib`, `hashlib.file_digest`; CI floor-check (vermin) per P4 §12 (F10) |
-| 12 | FAT32-cap and WAL-hostile-FS detection | P1 §8, P3 PF-08 | **ACCEPT + SPEC** | Specify per-OS mechanism: `/proc/mounts`, `mount` subprocess, ctypes `GetVolumeInformationW`; estimate is uncompressed upper bound (F11) |
-| 13 | Disk-space math ×2.2 inside HERMES_HOME | P3 PF-04 | **MODIFY** | Count bundle location when same FS; use hardlink backups (POSIX+NTFS) with copy fallback to avoid 3× multi-GB cost (F12) |
-| 14 | `sqlite3.backup()` on live 30 GB DB | P1 §17, P3 §5 | **ACCEPT + SPEC** | Use `pages=N` + progress callback + retry budget; document restart-on-write livelock risk and quiesce escape (F13) |
-| 15 | "Install Hermes for me" executes installer | P1 §10.1 | **REJECT** | Adopt P4 M8: print/copy the commit-pinned command, wait with re-check. Contradicts "no network, ever" (P4 §7) and failure ownership (F14) |
-| 16 | Exit codes | P2 §10 vs P3 §13 | **REJECT (P2's)** | Adopt P3's 0–9 set verbatim (encodes "only 5/6/7 touched the target"); P2's 0–5 collides at code 5 (F15) |
-| 17 | Bundle schema acceptance N/N−1 | P3 §9.3 | **REJECT** | Contradicts P4 §10.3 read-forever + golden bundles. Read all ≤ N forever; refuse only newer (F15) |
-| 18 | Intent switch as "first question" | P2 §4.4 | **MODIFY** | Keep the switch, default `replace` silently in wizard (P1/P4's 2-decision budget); `clone` lives in Customize/CLI (F16) |
-| 19 | `executions.db` default | P1 §6.1 ON vs P2 §2.6 OFF | **MODIFY** | Pick one: ON with terminal-row scrub (P1+P3 §5.2) is fine; record the decision in both docs (F16) |
-| 20 | Mode-bit provenance Windows→POSIX | P3 §2.3 (partial) | **MODIFY** | Manifest records POSIX modes when source is POSIX; classification registry supplies the 0600/0700 floor when source is Windows (no modes exist) (F17) |
-| 21 | Old-machine-off gate | P1 §12 vs P4 M7 | **MODIFY** | Make the hard gate platform-conditional (device-linked platforms configured ⇒ hard; else soft warning), per P4's more correct timing (F16) |
-| 22 | `.pyz` double-click on Windows | P1 §4, P4 M1 | **MODIFY** | True only for python.org-installer py launcher; Store Python doesn't associate `.pyz`. Copy must lead with the `python talaria.pyz` command (F18) |
-| 23 | Deep-Scan naming (`genskill` vs `deepscan generate`) | P2 §10 vs P3 §10.3 | **MODIFY** | One name. Keep P3's trust model verbatim (F16) |
-| 24 | Journaled txn, WAL-style resume, both-sides registry | P3 §2, §7 | **ACCEPT** | Add pre-uid/gid to chown journal records for reversibility; scope dir-fsync to POSIX (already done) |
-| 25 | Rewrite plan structural-locator-only, apply-side | P2 §8, P3 §8 | **ACCEPT** | Add existence-gating on auto home-remaps (auto only if target path exists, else needs_review) |
-| 26 | Per-file SHA-256, eternal header, salvage | P4 §10 | **ACCEPT** | Ratify before packer code (P4 handoff 2 — seconded) |
-| 27 | CRLF `.sh` scripts POSIX-ward | absent | **MODIFY (add)** | Flag-not-rewrite: preflight warns "CRLF line endings; bash will fail" (F18) |
-| 28 | GUI localhost server token | P1 §4 | **ACCEPT + SPEC** | Token required on every POST (CSRF), not just in URL; bind 127.0.0.1 only (F18) |
+| 1 | Skill provenance via `.bundled_manifest` MD5, recompute/reuse "bit-exactly" | P2 §3, P1 §5, P4 §8.1 | **MODIFY** | C2-01: the hash is OS-dependent (separator + sort collation). Parameterize by source-OS semantics at pack; **rebaseline manifest entries for stock-pristine skills in stage on cross-OS apply** |
+| 2 | Pid-liveness probes (PF-01, stale locks, mid-apply gateway re-probe) | P3 §3, §6.3 | **MODIFY** | C2-02: `os.kill(pid, 0)` **terminates** the process on Windows. Specify ctypes `OpenProcess`/`GetExitCodeProcess` probe; POSIX-only `os.kill(pid,0)` |
+| 3 | STAGE extraction / bundle member handling | P3 §2.1 | **MODIFY** | C2-03: no case-fold or NFC/NFD collision detection → silent overwrite on NTFS/APFS. Namelist collision scan + runtime fs-behavior probe + refuse-with-rename-plan |
+| 4 | Filename legality on Windows targets | all (GAP) | **GAP** | C2-04: reserved names, `<>:"|?*`, trailing dot/space. Predictive IMPOSSIBLE verdicts at pack; consented rename map at apply; **never** create via `\\?\` |
+| 5 | Long-path handling (>260) with txn root inside HERMES_HOME | P3 §2.1 | **MODIFY** | C2-05: `\\?\`-prefix helper for all Win fs ops; short txn dir names; preflight row for longest *final* path vs `LongPathsEnabled` |
+| 6 | "Same-filesystem atomic os.replace by construction" | P3 §2.1/§2.3 | **MODIFY** | C2-06: false for `_external/` targets (~/.honcho may be another volume). Per-destination-volume staging; EXDEV fallback protocol |
+| 7 | Apply op error → immediate rollback (T1) | P3 §2.4 | **MODIFY** | C2-07: Windows AV/indexer sharing violations are transient; bounded retry-with-backoff before T1 |
+| 8 | Python 3.9 floor: timestamp parsing, zoneinfo | P2 §6, P3 PF-09/10 | **MODIFY** | C2-08: 3.9 `fromisoformat` rejects `Z`; zoneinfo has **no data on Windows** without pip tzdata. Own RFC3339 parser; offset-based TZ compare; embedded Windows→IANA table if we pin `timezone:` |
+| 9 | GUI assets in zipapp; localhost server | P1 §4, constraint 3 | **MODIFY** | C2-09: mandate `importlib.resources.files()` (no `__file__`), bind `127.0.0.1` literally, soften "double-click .pyz" claim (Store Python lacks the launcher association) |
+| 10 | Streaming pack + hashing; walk pruning; FAT32 precheck | P1 §18, P2 §16, P4 §11 A9 | **MODIFY** | C2-10: mandate single-read hash-while-write via `ZipFile.open(name,'w')`; prune excluded dirs at descent; name the fs-type detection method per OS |
+| 11 | SQLite snapshot of hot multi-GB DBs | P3 §5 | **ACCEPT+** | C2-11: specify `backup(pages=-1)` single-pass (stepped backup can livelock on a hot 30 GB DB); rest of §5 is correct |
+| 12 | dotenv / YAML structural editors | P3 §8.3 | **MODIFY** | C2-12/13: preserve per-line CRLF and BOM byte-exactly; deterministic quoting rule for replacement scalars; refuse-list extended (flow style, merge keys, tabs) |
+| 13 | Zip-slip guard (`commonpath` semantics) | P3 §2.1, comp W9 | **MODIFY** | C2-14: also reject backslash-bearing member names, drive letters; `normcase` before containment on Windows; degraded-input strips `__MACOSX/`, tolerates cp437 names |
+| 14 | A3 "zero canaries in bundle byte-scan" | P4 §11 | **MODIFY** | C2-15: conversation DBs legitimately contain typed secrets; scope A3 to credential stores + disclose in security.md, or the test is unpassable/dishonest |
+| 15 | Inline config secrets → "placeholder left" | P1 §6.1 | **MODIFY** | C2-16: `${VAR}` interpolation is only documented for `mcp_servers`; default = omit key + checklist, not invented placeholders |
+| 16 | "Install Hermes for me" vs "print the pinned command" | P1 §10.1 vs P4 M8 | **CONTRADICTION** | C2-17: committee must pick one; either way neutralize installer's `maybe_start_gateway` (explicit `hermes gateway stop` before preflight) |
+| 17 | Exit codes | P2 §10 vs P3 §13 | **CONTRADICTION** | C2-18: P2's 5=warnings collides with P3's 5=rolled-back. Adopt P3's table verbatim; P2 defers |
+| 18 | Error-ID namespaces (WA-DEVICE-LINK / F01-F22+PF / TAL-xxx) | P1 §13, P3 §12, P4 §6 | **CONTRADICTION** | C2-18: one registry; TAL-xxx user-facing, others become internal aliases in the registry |
+| 19 | Lived-in-target conflict UX | P1 §10.4 vs P2 §10 vs P4 A6/M10 | **CONTRADICTION** | C2-19: wizard = replace-with-safety-copy only; per-conflict cards live in Customize/CLI; A6 re-scoped to that path |
+| 20 | `skills.external_dirs` "staged under `_external/`" | P2 §2.4 | **MODIFY** | C2-20: `_external/` encoding is home-relative only (upstream skips non-$HOME). Non-home externals: record-only + checklist by default; opt-in re-home under `$HH` + config rewrite |
+| 21 | PDF checklist export; Desktop default path; `~/.config/talaria` | P1 §8/§12, P2 §11 | **MODIFY** | C2-21: no stdlib PDF — HTML with print CSS; save-path fallback chain for headless/Termux; `%APPDATA%\talaria` on Windows |
+| 22 | chown mirror of #68483; secret modes | P3 §2.3 | **ACCEPT+** | POSIX-only import guards (`pwd`, `os.chown`); Windows already declared no-op — keep |
+| 23 | WAL-hostile fs detection (PF-08) | P3 §3 | **MODIFY** | Name the method: `/proc/self/mounts` fstype (Linux), `statfs.f_fstypename` via ctypes (macOS), `GetDriveTypeW==DRIVE_REMOTE` (Windows); "unknown" is a legal, reported answer |
+| 24 | Vault crypto sourcing | P1 §7, constraint 6 | **ACCEPT+** | Use `cryptography`'s Scrypt **and** AESGCM (one probe, one failure mode); do not mix `hashlib.scrypt` (absent on some LibreSSL builds) |
+| 25 | Txn root `.talaria/` inside HERMES_HOME | P3 §2.1 | **ACCEPT+** | Correct call; add: upstream `hermes backup` will happily zip `.talaria/` into *its* archives — document, keep a README marker inside, self-exclude on capture |
+| 26 | Both-sides machine-bound registry; journal+resume; read-only capture | P3 §2, §7 | **ACCEPT** | Sound; the strongest engineering in the packet |
+| 27 | Rewrites computed target-side, structural locators only | P2 §8, P3 §8 | **ACCEPT** | Correct and consistent across proposals; add C2-12/13 editor rules |
+| 28 | Eternal header + golden-bundle CI; 2.7-parseable stub | P4 §10 | **ACCEPT** | Adopt the "any Python launches it, 3.9+ runs it" wording precision |
 
-## Detailed findings
+## Ship-blocking findings
 
-### F1 — Windows filename validity: the missing gate (all proposals) — REQUIRED
+### C2-01 — `.bundled_manifest` hashes are not portable across OS; cross-OS migration silently freezes every stock skill
+`verified: tools/skills_sync.py:254-265` — `_dir_hash()` feeds `str(fpath.relative_to(directory))`
+into MD5. On Windows that string uses backslashes; on POSIX, slashes. Additionally
+`sorted(directory.rglob("*"))` sorts `Path` objects, whose collation is casefolded on Windows and
+case-sensitive on POSIX, so multi-file ordering differs too. The neighboring `_skill_file_list`
+(line 282-285) deliberately uses `.as_posix()` — upstream fixed exactly this bug class in the hub
+digest (issue #62310, cited in skills research §5) but **not** in `_dir_hash`.
 
-**Broken scenario.** A bundle packed on Linux contains any of: a file named `aux.md`, `con.py`,
-`nul` (agent-created skills can be named anything); a name with `< > : " | ? *` or control chars;
-a name ending in `.` or space (silently stripped by Win32, so the applied file's path no longer
-matches the manifest path → post-apply hash lookup fails → confusing auto-rollback). Verified
-concrete instance: `.curator_backups/<isoformat>/` directories contain colons
-(`agent/curator_backup.py:143`) — excluded by default, but P2's Customize lens lets a power user
-force-include them, and `sessions/saved/` + `session-exports/` carry user/agent-chosen names with
-no character guarantee. Result as proposed: apply fails midway on `OSError`/`ValueError`, rollback
-fires, user gets F13 with no explanation of *why* — or worse, Win32 name-stripping produces a
-silent path mismatch.
+Broken scenario: Linux → Windows migration carries `.bundled_manifest` verbatim (P2 §2.4 marks it
+ON/forced; P1 §6.1 same). On the target, `sync_skills()` recomputes the user copy's hash with
+Windows semantics → mismatch vs the carried origin hash → **every bundled skill classifies
+"user-modified" → permanently skipped for updates** (skills §5 three-way table), silently. P2 §3's
+"reuse the MD5 dir-hash bit-exactly" makes our own provenance engine wrong in the same move:
+recomputing on the target yields "stock-modified" for pristine skills.
 
-**Required change.** (1) Pack time: scanner computes a per-target-OS *name portability verdict*
-per path (reserved device names CON/PRN/AUX/NUL/COM1-9/LPT1-9 as stem, invalid chars, trailing
-dot/space, path-component length) and records it in the manifest; P2's predictive dependency
-matrix gains a "name-portability" column. (2) Apply time: preflight re-checks against the real
-target; each offending member gets an explicit decision — auto-rename with recorded mapping
-(e.g. `aux.md → aux_.md` + report row), or skip-with-reason. Never reach the mid-APPLY OSError.
-(3) The renamer must run *before* hashes become "expected apply hashes" so verification uses the
-renamed path. Cost: one pure-string check pass; zero new deps.
+Required change (both sides):
+1. **Pack**: provenance hashing is parameterized by *source-OS semantics* (separator + collation)
+   and the manifest records which semantics produced each hash. Our engine never compares hashes
+   computed under different semantics.
+2. **Apply (cross-OS only)**: in stage, rewrite `.bundled_manifest`: for every skill whose
+   pack-time provenance was stock-pristine, recompute the entry with **target-OS** semantics.
+   Entries for genuinely modified skills are left alone (any mismatch still reads "modified" —
+   correct). Same audit for `_org/*/.org-baseline.json` (separate fingerprint scheme — flag if
+   present, do not guess).
+3. New acceptance scenario (P4 §11): pack Linux fixture with 1 genuinely modified stock skill →
+   apply on Windows → `hermes skills list-modified` reports exactly that one skill.
 
-### F2 — MAX_PATH: >260-char paths break stage before they break final — REQUIRED
+### C2-02 — Windows pid probe as designed will kill the gateway
+Python on Windows implements `os.kill(pid, sig)` for any sig other than the two console-control
+events by calling `TerminateProcess(pid, sig)`. `os.kill(pid, 0)` — the canonical POSIX liveness
+probe — **unconditionally terminates the target process with exit code 0** on Windows. P3 PF-01
+("gateway.pid liveness probe"), the stale-`.talaria/lock` probe (§2.1), the `.backup.lock`
+freshness check, and the mid-apply gateway re-probe (§6.3) all need a probe; none specifies one.
+A straight port murders the process it is checking — on the *target*, possibly mid-someone-else's
+work, from a tool whose first promise is "we don't touch anything without a journal".
 
-**Broken scenario.** `%LOCALAPPDATA%\hermes\` + `skills/<cat>/<skill>/references/...` +
-session-export names routinely approaches 260 chars. P3's stage tree *adds*
-`.talaria/txn/<txn_id>/stage/` (~35 extra chars), so staging fails with `FileNotFoundError`/
-`OSError 206` even when final paths would fit. Python does not opt out of MAX_PATH unless the
-user's registry LongPathsEnabled is set (it usually is not).
+Required change: spec the probe as a named helper: POSIX = `os.kill(pid, 0)` catching
+`ProcessLookupError`/`PermissionError`; Windows = ctypes
+`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `GetExitCodeProcess == STILL_ACTIVE(259)`,
+fallback `tasklist /FI "PID eq N"`. Add a unit test asserting no call path reaches `os.kill` with
+sig 0 on win32.
 
-**Required change.** On Windows, every filesystem call (pack walk, stage extract, backup copy,
-`os.replace`, hashing) goes through a single path-normalization helper that produces
-`\\?\C:\...` extended-length absolute paths (and `\\?\UNC\...` for shares). Preflight computes
-`len(target_home) + max(member_relpath) + txn_prefix` and reports it. 8.3 short forms (HKCU may
-hold `RUNNER~1` shapes — install §1) are resolved via `os.path.realpath` before comparison, so
-`HERMES_HOME` equality checks don't false-negative.
+### C2-03 — Case-insensitivity and Unicode normalization: silent data loss during STAGE
+Broken scenarios: (a) bundle packed on ext4 contains `session-exports/Notes.md` and `notes.md`
+(legal, distinct); STAGE extraction on NTFS or APFS writes both to one file — last write wins,
+hash verification of the *first* member then fails **after** its bytes are gone, or worse, both
+hash-check individually during streaming and the loss is never detected. (b) A macOS source stores
+a filename in NFD; a config reference typed in NFC resolves on APFS (normalization-insensitive
+lookups) but dangles on ext4 after migration — no error, just a skill/script that "isn't there".
 
-### F3 — Case-fold and NFC/NFD collisions: silent data loss on macOS/Windows targets — REQUIRED
+Required change:
+1. STAGE pre-scan of the full namelist before any extraction: group by
+   `unicodedata.normalize("NFC", name).casefold()`; also an NFD-fold pass. Collisions on an
+   insensitive/normalizing stage filesystem → refuse with a rename plan (consented), never
+   last-write-wins.
+2. Filesystem behavior is *probed*, not assumed from `sys.platform` (Linux can mount ciopfs/SMB;
+   macOS can mount case-sensitive APFS): create `probe.A`/`probe.a` and NFC/NFD probe names inside
+   the txn dir and observe.
+3. Pack-time predictive matrix rows (P2 §6): case-fold and NFC/NFD collision counts per declared
+   target OS.
+4. Preflight reference resolution runs both byte-exact and normalization/case-insensitive
+   matching; anything that resolves only under the forgiving mode is flagged with the exact pair.
 
-**Broken scenario.** Linux source legitimately contains `skills/notes/Foo/SKILL.md` and
-`skills/notes/foo/SKILL.md` (hub discovery is silent-first-wins, so upstream never prevents
-this — skills §2). Applied to macOS (APFS case-insensitive-preserving default) or Windows NTFS:
-the second extraction *overwrites* the first inside stage; each member's write-time hash passes
-individually, but the final tree has one survivor. Post-apply integrity re-hash then fails for
-one path (case-insensitive lookup returns the survivor's bytes) → auto-rollback with a cryptic
-hash-mismatch — the best case. Worst case (two files identical in content) it *passes* and the
-user silently lost a skill. Sibling issue: NFC vs NFD — a bundle packed on macOS carries NFD
-names (`é` = `e`+combining); on a Linux target with an existing NFC-named file, conflict
-detection string-compares raw names, misses the match, and the user ends up with two
-visually-identical files.
+### C2-04 — Windows filename legality (reserved names, illegal characters) — no proposal covers it
+POSIX filenames may contain `: * ? " < > |`, end in dots/spaces, or be `aux.md`, `con`, `nul.txt`,
+`COM3.log`. All are uncreatable through the Win32 layer. The realistic cases in a Hermes home:
+ISO-timestamped export/snapshot names with colons, agent-created skill assets with arbitrary
+names. Creating them via the `\\?\` prefix "works" but produces files that Explorer, git,
+PowerShell 5.1 and **Hermes itself** then cannot reliably open — strictly worse than failing.
 
-**Required change.** (1) Pack time: single pass computing `relpath.casefold()` and
-`unicodedata.normalize('NFC', relpath)` collision sets; collisions recorded in the manifest and
-shown at review ("these two items cannot coexist on Windows/macOS"). (2) Apply preflight: probe
-target-FS case sensitivity empirically (create `probe_a`/`PROBE_A` inside the txn dir) rather
-than assuming by OS — APFS can be case-sensitive, NTFS dirs can be flagged case-sensitive.
-Collisions on an insensitive target require a recorded decision (rename/skip) exactly like F1.
-(3) Conflict matching against lived-in targets compares NFC-normalized, casefolded keys on
-insensitive filesystems. All stdlib (`unicodedata`).
+Required change: (1) pack-time predictive verdict IMPOSSIBLE-ON-WINDOWS per offending member with
+the exact offending character; (2) apply-time deterministic, manifest-recorded rename map
+(percent-encoding of illegal chars + reserved-name suffixing), applied only with consent and fully
+listed in the Migration Report; refuse silent munging; (3) rename map re-checked against C2-03
+collision logic (a rename can newly collide).
 
-### F4 — PF-01 as naively implemented kills the gateway on Windows — REQUIRED (spec, not intent)
+## Field-bug findings
 
-P3 PF-01 says "gateway.pid liveness probe" without a mechanism. The obvious implementation —
-`os.kill(pid, 0)` — is documented *by upstream itself* as a Windows footgun: any signal other
-than the CTRL events unconditionally `TerminateProcess`es the target
-(`gateway/status.py:741-756`, `gateway/run.py:10710-10719`, which use ctypes
-`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + exit-code check). A "read-only preflight"
-that terminates the user's running gateway is the single worst correctness violation available
-to this tool. **Required:** the design doc must pin the mechanism — POSIX `os.kill(pid, 0)`
-(EPERM counts as alive); Windows ctypes `OpenProcess`+`GetExitCodeProcess` with `tasklist`
-fallback. Same helper reused for `.backup.lock`/update-lock staleness checks and the mid-apply
-gateway re-probe (T5), which would otherwise repeatedly fire the same footgun.
+### C2-05 — Long paths (>260) on Windows
+Stage inflates depth: `C:\Users\<u>\AppData\Local\hermes\.talaria\txn\<id>\stage\profiles\coder\
+skills\<cat>\<skill>\references\...` exceeds MAX_PATH for real skill trees (485 files in stock
+`skills/` alone). Required: single Windows path helper applying `\\?\` to absolute paths for all
+tool I/O; txn ids ≤12 chars, stage/backup dirs named `s/`,`b/`; **final** paths are additionally
+length-audited in preflight because Hermes' own runtime must open them — read
+`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled` to grade the warning (WARN
+when 0 and any final path >260; the tool can still place the file, Hermes may not read it).
 
-### F5 — `.bundled_manifest` MD5 is OS-dependent; "bit-exact reuse" breaks cross-OS — REQUIRED
+### C2-06 — EXDEV: external-state destinations break the "same-filesystem by construction" claim
+P3 §2.1 stages everything inside target HERMES_HOME, then `os.replace`s to final. `_external/`
+artifacts restore to `~/.honcho`, `~/.hindsight` — `$HOME` and `$HERMES_HOME` are routinely
+different filesystems on VPSes (mounted volume for the data dir) and always different when
+HERMES_HOME is a network mount. `os.replace` across devices raises `EXDEV` → spurious rollback of
+an otherwise healthy apply. Required: staging is **per destination volume** (`st_dev` grouping):
+external destinations get `<dest_parent>/.talaria.stage.<txn>/`; when a sibling stage dir cannot
+be created, fall back to copy → fsync → `os.replace` within the destination directory. The journal
+records the strategy per op; rollback understands both.
 
-**Broken scenario.** Verified: `_dir_hash` (`tools/skills_sync.py:254-266`) hashes
-`str(rel)` — `references\x.md` on Windows vs `references/x.md` on POSIX — over `sorted(Path)`,
-whose ordering is case-insensitive on Windows (`['a\\x','B\\x']` vs POSIX `['B/x','a/x']`,
-demonstrated live). Consequence of P2 §3's "reuse the MD5 dir-hash algorithm bit-exactly" +
-P1 §6.1's "carry `.bundled_manifest`": after a Linux→Windows move, target-side Hermes
-`sync_skills()` recomputes every skill's hash with Windows semantics, mismatches the carried
-Linux-computed baseline, and classifies **every bundled skill as user-modified** — skill updates
-freeze forever (sync never overwrites "modified" skills — skills §5), and Talaria's own
-target-side provenance display shows garbage. Safe direction (no data loss), silently wrong
-forever.
+### C2-07 — Transient Windows sharing violations must not trigger rollback
+Defender/Search Indexer briefly open freshly created files; `os.replace` then raises
+`PermissionError` (ERROR_SHARING_VIOLATION/ACCESS_DENIED). P3 T1 as written converts a 200 ms AV
+scan into a full rollback. Required: on Windows, every journaled fs op retries bounded
+(6 attempts, exponential backoff to ~2.5 s total) on PermissionError before declaring T1. Document
+that PF-01's gateway gate does not quiesce AV. (Same retry wraps `delete_stale` sidecar removal.)
 
-**Required change.** (1) Provenance verdicts are computed **on the source at pack time** (same
-OS as wrote the manifest) and carried as data — never recomputed naively on the target. (2) New
-apply-side op `rebaseline_bundled_manifest`: for skills the source verified **stock-pristine**,
-rewrite their `.bundled_manifest` entries with target-OS-recomputed `_dir_hash` values (running
-our faithful reimplementation with *target* Path semantics), so upstream sync keeps updating
-them. Modified/user skills keep their carried entries (they are skip-listed either way).
-Journaled, previewable, cited. (3) Contrast note for the spec: `.hub/lock.json` hashes are
-already cross-OS stable (POSIX-sorted rel-path strings, upstream issue #62310) — carry verbatim,
-no rebaseline. Same review applies to `_org/*/.org-baseline.json` fingerprints (third scheme).
+### C2-08 — Python 3.9 floor: timestamps and timezones
+(a) `datetime.fromisoformat` on 3.9 rejects `Z` and some offsets (fixed only in 3.11). Cron
+`run_at`, manifest timestamps, journal timestamps from other producers must go through a small
+tolerant RFC3339 parser we own. (b) `zoneinfo` (3.9 stdlib) has **no tz database on Windows**
+without the third-party `tzdata` wheel — `ZoneInfo("Europe/Paris")` raises. Therefore: PF-10 TZ
+comparison must not require ZoneInfo — record `(tz_name, utc_offset_now, dst_flag)` at pack;
+compare names textually and offsets numerically on target; use ZoneInfo only opportunistically.
+(c) Pinning `timezone:` into config.yaml from a Windows *source* requires Windows→IANA mapping
+(registry `TimeZoneKeyName` → CLDR table, ~140 entries) — embed the table as data or degrade to
+"pin manually" guidance; never write a Windows display name into config. (d) Ratify P4's vermin
+CI gate; ban `match`, `X | Y` annotations at runtime, 3.10+ APIs.
 
-### F6 — PF-10 timezone comparison is unimplementable as written on stdlib Windows — REQUIRED
+### C2-09 — Zipapp/GUI mechanics
+All asset loads via `importlib.resources.files(package)` (3.9-safe) — `__file__`-relative paths
+do not exist inside a `.pyz`; add a CI test that runs the GUI server *from the built .pyz*, not
+the repo. Bind and print `127.0.0.1:<port>` literally (avoid `localhost` → `::1` mismatch).
+P1 §4's "double-click on Windows — the py launcher registers `.pyz`": true for python.org
+installs, **false for Microsoft Store Python** (no launcher, no `.pyz` association) — soften copy
+and keep the `python talaria.pyz` command primary. Test `.pyz` paths containing spaces/Unicode.
 
-`zoneinfo` (3.9) has **no timezone database on Windows** unless the third-party `tzdata` package
-is installed — `ZoneInfo("Europe/Berlin")` raises. And there is no stdlib API to obtain the
-local IANA zone *name* on Windows (`time.tzname` yields "W. Europe Standard Time"). PF-10
-("bundle timezone unset AND source system TZ ≠ target system TZ") therefore cannot compare zone
-identities on a Windows endpoint. **Required change:** at pack time record `{iana_name_best_effort,
-utc_offset_now, utc_offset_jan1, utc_offset_jul1}` (offsets via `time.localtime`/
-`datetime.now().astimezone()` — pure stdlib everywhere). PF-10 compares offsets (both winter and
-summer to catch DST-rule differences) and treats name comparison as best-effort enrichment;
-remediation stays the same (pin `timezone` in config — cron §6). If `tzdata` happens to be
-importable, use it as an optional enhancement per constraint 1's graceful-degradation clause.
-One-shot `run_at` values are TZ-aware strings (cron §1.3) and need no zone DB to compare —
-state that explicitly so nobody "fixes" them with zoneinfo.
+### C2-10 — Performance mechanics must be specified, not implied
+(1) Hash-while-write: stream each payload file once through `ZipFile.open(name, "w")` in chunks,
+updating SHA-256 in the same pass (P2 §16's "hashing on the fly" made concrete). The mandated full
+re-reads are: pack self-verify, stage extract, post-apply verify — a 30 GB DB already costs 4 full
+passes; forbid accidental extras (no separate "hash pass"). (2) Scanner prunes excluded dirs at
+descent (`os.scandir`, skip before recursion) — filtering after enumeration re-creates the
+426,543-file stall inside `node_modules`/caches. (3) FAT32/exFAT 4 GiB precheck: name the
+detection — Windows `GetVolumeInformationW`, Linux `/proc/self/mounts`, macOS `statfs` via ctypes;
+when undetectable and estimate >4 GiB, warn "removable-drive formats may cap files at 4 GiB".
+(4) Free-space check via `shutil.disk_usage` against the *destination volume of each stage root*
+(follows C2-06).
 
-### F7 — Rewrite editors: BOM, CRLF, and writer fidelity — REQUIRED
+### C2-11 — Hot-DB backup convergence
+`sqlite3.Connection.backup` with stepped `pages=N` restarts whenever a writer intervenes — on a
+busy 30 GB `state.db` it can livelock. Use `pages=-1` (single-pass, page-streamed; holds a read
+snapshot, which WAL tolerates), keep P3's retry/fail-closed ladder, and let progress reporting for
+DB snapshots be file-size-based rather than page-callback-based.
 
-- `json.loads` **rejects a UTF-8 BOM**; upstream deliberately reads jobs.json with `utf-8-sig`
-  because Windows users edit it in Notepad (cron §1.4). P3 §8.3's JSON editor must read
-  `utf-8-sig` and write BOM-less UTF-8 (matching upstream's writer), else a BOM'd store bricks
-  the rewrite phase.
-- The dotenv line editor and the YAML indentation editor must open with `newline=''` and
-  preserve each file's existing line-ending flavor byte-for-byte; a CRLF `.env` rewritten LF
-  churns every line and destroys the "only the targeted line changed" guarantee.
-- `json.dumps(indent=2)` must also match upstream's `ensure_ascii` default (True) or non-ASCII
-  job names change byte form — semantically harmless, but it breaks P3's pre/post-hash
-  bookkeeping claims of minimal diffs and pollutes report diffs.
+### C2-12 / C2-13 — Editor byte-fidelity rules
+Both structural editors (dotenv, YAML) must: split with `splitlines(keepends=True)` and re-emit
+each untouched line byte-identically; preserve the file's BOM state (jobs.json is read
+`utf-8-sig` upstream; a dropped/added BOM is a diff and can break naive consumers); use each
+file's dominant terminator for any *inserted* line. YAML replacement scalars follow a
+deterministic quoting rule: emit single-quoted (doubling embedded quotes) unless the value is
+plain-safe under YAML 1.1; extend the refuse-to-edit list with flow mappings on the target line,
+merge keys (`<<:`), and tab-indented documents. Windows drive paths (`C:\Users\bob`) are
+plain-unsafe in some positions — the quoting rule covers them uniformly.
 
-### F8 — Windows transient locks: retry before rollback — REQUIRED
+### C2-14 — Bundle-name hygiene beyond W9
+Reject member names that are absolute, contain `..` segments, contain backslashes (hostile or
+Windows-made zips; do not "helpfully" treat them as separators), or start with a drive letter.
+Containment check `normcase`s both sides on Windows. Degraded `hermes backup`/hand-made zip
+ingestion strips `__MACOSX/` and `.DS_Store`, and tolerates cp437-flagged (non-UTF-8) names by
+reporting mojibake rather than crashing.
 
-Antivirus/Search Indexer briefly opens freshly-written files; `os.replace` then fails with
-sharing violations (WinError 5/32). As proposed, T1 turns one transient AV probe into a full
-rollback of a 30 GB apply. **Required:** bounded retry (3 attempts, 100/400/1600 ms backoff) on
-`PermissionError`/`OSError` winerror 5/32 for `os.replace`, dir renames (`replace_tree` is
-two renames and doubly exposed), and stage deletes — then T1. Journal records retry counts.
-Same wrapper handles the `replace_tree` caveat that `os.rename` onto a non-empty dir fails on
-every OS — the aside-then-in two-step in P3 §2.2 is correct; the retry wrapper makes it survive
-Windows reality.
+### C2-15 — The canary test vs conversation content
+`state.db` legitimately contains secrets the user typed into chats. A3's "byte-level scan of the
+bundle finds zero canaries" fails the moment a canary is also planted in a fixture conversation —
+and if fixtures avoid it, the README claim overstates. Scope A3 to credential stores (the
+canonical secret lists), and add to security.md: "conversation history may contain secrets you
+typed; the vault option or history exclusion covers that risk."
 
-### F9 — Zipapp discipline: asset loading and >4 GiB members — REQUIRED (spec)
+### C2-16 — Inline config secret placeholders
+`${VAR}` interpolation is documented for `mcp_servers` entries only (integ §2.1). Writing
+`api_key: ${OPENAI_API_KEY}` into arbitrary config keys hands Hermes a literal string and produces
+a confusing auth failure far from the migration. Default = drop the key in stage + checklist card
+("re-add model.api_key"); placeholder strategy only for keys verified interpolation-aware
+(venv-assisted check when available).
 
-No proposal states how GUI assets, report templates, or the generated Deep-Scan skill templates
-load from inside `talaria.pyz`. `__file__`-relative reads fail inside a zipapp. **Required
-contract:** every embedded asset is a package resource read via `importlib.resources.files()`
-(3.9-safe) or `pkgutil.get_data`; the stdlib HTTP server serves assets from memory, never from
-disk paths; a CI test runs the GUI smoke test *from the built .pyz*, not the repo checkout
-(P4 §12 already runs A1 from the artifact — extend it to cover one GUI asset fetch).
-Pack-side: when streaming members of unknown final size, `ZipFile.open(name, 'w')` must pass
-`force_zip64=True`, or a >4 GiB `state.db` snapshot raises at member close — after hours of
-work. zip64 stays unconditionally on (P1 §18/P2 §16 agree; this is the mechanical detail that
-makes it true).
+### C2-17 — Installer execution contradiction has a correctness core
+P1 §10.1 *executes* the official installer; P4 M8 prints it and waits. Beyond product taste:
+install.sh's pipeline ends in `maybe_start_gateway` (install §1), so either path can leave a
+**running gateway** on the target that P3 PF-01 then refuses on — a guaranteed first-run stumble.
+Whichever stance the committee ratifies, the flow must (a) pass whatever flag suppresses gateway
+start if one exists, verified against the pinned installer revision, else (b) always run
+`hermes gateway stop` between install and preflight, and say so on screen.
 
-### F10 — Python 3.9 floor: concrete bans
+### C2-18 / C2-19 — Unifications (contradictions found)
+Exit codes: P2 §10 (5 = completed-with-warnings) vs P3 §13 (5 = rolled back) — adopt P3's table
+verbatim; P2's statuses live in `--json` bodies. Error IDs: three namespaces (P1 mnemonic strings,
+P3 F/PF codes, P4 TAL-xxx) — one registry, TAL-xxx user-facing, others become aliases. Conflict
+UX: P1 wizard offers replace-or-cancel only; P2/P4 promise per-conflict decisions — resolve as:
+wizard = replace-with-safety-copy; per-conflict merge only in Customize/CLI (`--conflict`);
+P4 A6 re-scoped to that path. All three must be settled before any UI or exit-code lands in code.
 
-Consistent with P2 §16 (JSON-not-TOML) and P4 §10.5 (2.7-parseable stub — endorsed; note the
-stub must contain no f-strings before the version check). Additional floor bans for the
-implementation standard: PEP 604 `X | None` annotations (3.10), `match` (3.10),
-`hashlib.file_digest` (3.11 — use chunked reads), `datetime.UTC` (3.11), `Path.walk` (3.12).
-`zoneinfo`, `graphlib`, `importlib.resources.files`, `argparse.BooleanOptionalAction` are all
-3.9-OK. Gate with vermin in CI per P4 §12.
+### C2-20 — Non-home external dirs
+`_external/` encoding is home-relative by design; upstream *skips* non-$HOME paths
+(state §2.2). P2 §2.4 stages arbitrary `skills.external_dirs` without a placement story for
+`/opt/shared-skills`-style paths. Required policy: home-relative externals restore home-relative;
+non-home externals default record-only + checklist; opt-in re-home under `$HH/external/<name>/`
+with the `skills.external_dirs` pointer rewritten by the structural editor.
 
-### F11 — Filesystem-type detection needs a specified mechanism
+### C2-21 — Small platform truths
+No stdlib PDF: P1 §8's "checklist (PDF/HTML)" becomes HTML with print CSS ("Save as PDF from your
+browser"). Default save path `~/Desktop` doesn't exist headless/Termux — fallback chain Desktop →
+home → cwd. P2 §11's `~/.config/talaria/` → `%APPDATA%\talaria` on Windows. Termux: `~/Downloads`
+may not exist (needs `termux-setup-storage`) — tolerate; `webbrowser.open` may no-op — print URL +
+`termux-open-url` hint. `os.chown`/`pwd` imports guarded POSIX-only (the #68483 chown mirror is
+right; it just must not import-crash on Windows). Post-checklist secret paste-back (P1 §12) writes
+`.env` after COMMIT — journal it as a micro-op with a `.env` backup, preserving EOL style (C2-12).
 
-PF-08 (WAL-hostile FS) and P1 §8 (FAT32 4 GB cap) are right to exist; neither names a method,
-and `os.statvfs` carries no FS type on macOS. **Spec:** Linux/Termux — parse `/proc/mounts`
-longest-prefix match (nfs/cifs/smb/fuse/vfat/exfat/9p); WSL1 detection via `/proc/version`
-"Microsoft" + fs type; macOS — `subprocess mount` output parse (stdlib, no network); Windows —
-ctypes `GetVolumeInformationW` (FAT32/exFAT/NTFS) + `GetDriveTypeW` (remote). All read-only.
-FAT32 check compares against the *uncompressed* payload sum as the honest upper bound (the
-compressed size is unknowable at 0%) and re-checks the actual size at publish.
+## Constraint compliance audit (stdlib-only / 3.9 / zipapp)
 
-### F12 — Space math and the 3× problem on lived-in targets
+No proposal secretly requires a third-party package at runtime. Verified feasible in stdlib:
+`winreg` (HKCU), ctypes probes (C2-02/05/10/23), `shutil.disk_usage`, `zipfile` zip64 + streaming
+entry writes (3.6+), `sqlite3` ro-URI + `backup()` (3.7+), `importlib.resources.files` (3.9),
+`graphlib` for coupling-rule ordering (3.9), `hashlib` SHA-256. The two places the constraint
+genuinely bites — YAML editing and Windows→IANA tz mapping — are solved structurally (P3 §8.3 +
+C2-13) and with embedded data (C2-08c) respectively. Vault: use `cryptography` for both Scrypt and
+AES-GCM (C2-24 in table) so capability equals one import probe. Playwright (P4 §9) is dev-only —
+acceptable. Mermaid appears only in docs. **CONSTRAINT CHALLENGES: none.** Adopt P4 §10.5's
+wording precision ("any Python launches it; 3.9+ runs it") — the 2.7-parseable stub must itself be
+lint-gated (no f-strings in `__main__.py`).
 
-PF-04's ×2.2 inside `$HERMES_HOME` is directionally right but understates: a lived-in target
-with its own 30 GB state.db needs stage (30 GB) + backup (30 GB) + slack, and if the
-`.hermespack` sits on the same filesystem its 30 GB counts too. **Required:** (1) space formula
-includes the bundle when co-located; (2) BACKUP uses `os.link` hardlinks where supported (POSIX
-and NTFS both support them; FAT32/exFAT do not) with copy fallback — safe because apply never
-edits files in place (always `os.replace`, which unlinks the name, leaving the backup hardlink
-pointing at the original inode) — turning the backup of unchanged multi-GB files into O(1)
-space. Journal records `backup_kind: link|copy` so rollback and NEEDS_ATTENTION instructions
-stay truthful.
+## Non-negotiable required changes (summary)
 
-### F13 — Live-source `sqlite3.backup()` can livelock on a busy DB
-
-`Connection.backup` with default `pages=-1` copies in one pass but blocks writers; with
-`pages=N` it *restarts* when the source changes between steps — on a chatty gateway a 30 GB
-state.db snapshot may never converge. Upstream shares the exposure, but our live-capture banner
-(P3 §6.1) makes it our support ticket. **Spec:** `pages=1024` + progress callback (feeds the
-GUI bar), a restart counter, and after ~3 restarts surface "this database is too busy to
-snapshot live" with the quiesce screen (§6.2) rather than spinning silently. `busy_timeout`
-5000 ms as proposed.
-
-### F14 — Installer execution: P1 vs P4 contradiction — resolve toward P4
-
-P1 §10.1 runs the official installer from inside Talaria; P4 M8 prints the pinned command and
-waits; P4 §7's README promises "no network, ever." Running `install.sh`/`install.ps1` is a
-network operation executed by our process on a machine we don't control — it breaks the promise
-as worded and transfers installer failure ownership to us (P4's argument, which I second on
-correctness grounds: the Windows path would mean invoking PowerShell with an execution-policy
-bypass from Python — terrible optics and genuinely fragile). **Adopt:** print/copy the exact
-pinned command (`--commit <sha> --skip-setup`), "Done — check again" loop. If the committee
-keeps a run-it-for-me button, the README's network promise must be reworded to "the tool itself
-never phones home", and the button must stream installer output verbatim and disclaim ownership.
-
-### F15 — Exit codes and schema windows: hard contradictions — unify now
-
-- **Exit codes.** P2 §10: `0 ok · 2 verification failed · 3 blocked · 4 abort · 5
-  completed-with-warnings`. P3 §13: `5 = apply failed, rollback succeeded`. A script written
-  against one is dangerous against the other (P2's "warnings" is P3's "your target was
-  modified and restored"). Adopt **P3's 0–9 verbatim** — it encodes the load-bearing guarantee
-  ("only 5/6/7 imply the target was touched") — and rewrite P2's CLI doc to match.
-- **Schema acceptance.** P3 §9.3 accepts N and N−1; P4 §10.3 rule 1 is read-*forever* with
-  append-only golden bundles ("old bundles are people's backups"). These cannot both ship.
-  Adopt P4: the reader keeps migration shims for *all* past schemas, enforced by the golden
-  corpus in CI; refuse only newer-than-N (with the eternal-header message). P3's N−1 window
-  would make a two-year-old `.hermespack` unreadable — data loss by policy.
-
-### F16 — Smaller cross-proposal conflicts (each needs one ruling)
-
-1. **Intent switch placement.** P2 §4.4 makes replace-vs-clone "the first question"; P1 §2 and
-   P4 M5 cap the wizard at two decisions that don't include it. Ruling proposed: wizard
-   defaults to `replace` silently (the research's own default rationale — integ §6), the
-   switch lives at the top of Customize and as `--intent`; preflight prints the active intent
-   loudly. Keeps P2's engine, preserves P1's budget.
-2. **`executions.db` default:** P1 §6.1 ON (terminal rows) vs P2 §2.6 OFF. Either is safe with
-   P3 §5.2's scrub; pick ON for wizard parity with "Scheduled tasks" coherence and note P2's
-   table as the deviation — or flip both. One line, but today the docs disagree.
-3. **Old-machine-off gate:** P1 §12 hard-gates "Start Hermes" on a single checkbox; P4 M7
-   correctly notes non-device-linked platforms tolerate overlap while the new machine verifies.
-   Make the hard gate conditional on device-linked platforms (WhatsApp/Signal/Matrix/relay)
-   actually configured in the bundle; otherwise it is a soft confirmation. P3 §11's per-platform
-   hazard list already computes exactly this set — reuse it.
-4. **Deep-Scan command name:** P2 `talaria genskill` vs P3 `talaria deepscan generate`. One
-   name (recommend P3's — the skill is called Deep-Scan in both), P3's trust model verbatim.
-5. **Report/checklist directory:** P1 `$HERMES_HOME/migration/<ts>/` vs P3/P4
-   `$HERMES_HOME/migration/talaria/<ts>/`. Adopt the namespaced form; add it to the capture
-   exclusion registry (it must never be packed into a later bundle).
-6. **Unrecognized-bucket disposition:** P2 §2.13 default-ON capture, P3 F22 "carried under
-   quarantine prefix", P4 §10.3 "placed only with explicit consent". Compatible if stated once:
-   capture ON (quarantine prefix) → apply requires consent. Write it in the spec as one rule.
-
-### F17 — Mode-bit provenance for Windows→POSIX moves
-
-P3 restores 0600/0700 from the classification registry — necessary but not sufficient: a
-POSIX→POSIX move should preserve the *user's actual* modes (e.g. a 0755 script under
-`$HH/scripts/`). **Spec:** manifest records per-file POSIX mode when the source is POSIX;
-apply uses recorded modes when present, registry floor always wins for secret classes; when the
-source was Windows (no modes recorded), registry supplies everything and executable-bit
-inference for `scripts/**` comes from extension + shebang sniff, reported per file. Windows
-targets: note "NTFS ACLs not managed" (P3 already has this).
-
-### F18 — Assorted required specs (short)
-
-- **`.pyz` launch copy** (P1 §4, P4 M1): "double-click works" only when the python.org launcher
-  owns `.pyz`. Lead with `python talaria.pyz`; keep double-click as a parenthetical.
-- **CRLF `.sh` cron scripts** applied to POSIX targets: flag in preflight ("bash will fail on
-  CRLF"), never rewrite user scripts (consistent with P3 §8.3's never-list).
-- **Symlinked target subtrees:** a user may have symlinked e.g. `state.db`'s parent to another
-  disk. `os.replace` over a symlink replaces the *link*, and same-FS atomicity assumptions
-  break. Preflight: lstat every destination parent; symlinked components ⇒ WARN + treat that
-  subtree as cross-FS (copy+fsync+rename inside the real target dir).
-- **chown journal records** must include pre-op uid/gid or rollback of #68483-style chowns is
-  unimplementable (P3 §2.3).
-- **GUI POST authentication:** the one-time URL token must be required as a header on every
-  mutating request (paste-back writes secrets into `.env` — P1 §12); bind 127.0.0.1 only.
-- **`~/Downloads` bundle search** (P1 §4): on Windows the Downloads folder is a Known Folder
-  and may be relocated (OneDrive). Best-effort via registry Known Folders read; failure to find
-  is fine, wrong-folder search is just wasted IO — LOW severity, note only.
-- **`os.path.commonpath` containment** (P3 STAGE): compare `os.path.normcase`d paths on
-  Windows or containment checks false-negative on case differences.
-
-## Constraint challenges
-
-None. All findings are implementable within the eight constraints; F6 is the closest call and
-is resolved *inside* constraint 1 by recording offsets at pack time (plus optional `tzdata`
-enhancement under the graceful-degradation clause). Constraint 4's wording precision proposed by
-P4 §10.5 ("any Python launches it; 3.9+ runs it") is endorsed.
-
-## Priority of required changes
-
-**P0 (before any packer/applier code):** F1, F2, F3 (name/path/collision gates — they change the
-manifest schema), F5 (rebaseline op + provenance-at-pack), F15 (exit codes + read-forever),
-F4/F6/F7 (spec pins), F9 (zipapp contract), F26/eternal header ratification (with P4).
-**P1:** F8, F11, F12, F13, F17, F14 ruling, F16 rulings.
-**P2:** F18 items.
+1. **C2-01** provenance hash OS-parameterization + stock-pristine rebaseline on cross-OS apply.
+2. **C2-02** platform-correct pid probe; ban `os.kill(pid, 0)` on win32 by test.
+3. **C2-03** case/NFC-NFD collision scan + fs probe + refuse-with-rename before extraction.
+4. **C2-04** Windows filename-legality verdicts at pack, consented rename map at apply.
+5. **C2-05/06/07** `\\?\` helper; per-volume staging with EXDEV fallback; Windows retry-before-rollback.
+6. **C2-08** RFC3339 parser; offset-based TZ compare; no zoneinfo dependency for correctness.
+7. **C2-10** hash-while-write single pass; prune-at-descent; named fs-type detection.
+8. **C2-18/19** one exit-code table (P3's), one error registry (TAL-xxx), one conflict-UX story —
+   ratified before code.
