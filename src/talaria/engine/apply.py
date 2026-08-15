@@ -355,7 +355,9 @@ def _stage(reader: BundleReader, manifest: dict, plan: RewritePlan, stage_dir: P
         else:
             continue
 
-        staged = stage_dir / root_rel.replace("/", "__")
+        # Index-named staged files: flattening path separators can collide
+        # ("a/b__c" vs "a__b/c"); an ordinal never does.
+        staged = stage_dir / f"{len(placements):06d}"
         reader.extract_member(rec.member, staged)
         placements.append(_Placement(
             member=rec.member, staged=staged, final=final, root_rel=root_rel,
@@ -416,10 +418,10 @@ def _stage_vault(reader: BundleReader, manifest: dict, stage_dir: Path,
 
     vr = vault_mod.open_vault(manifest, options.vault_passphrase)
     assert reader.zf is not None
-    for record in vr.members():
+    for seq, record in enumerate(vr.members()):
         profile = record.get("profile", "")
         root_rel = record.get("root_rel") or record["home_rel"]
-        staged = stage_dir / ("vault__" + root_rel.replace("/", "__"))
+        staged = stage_dir / f"vault-{seq:06d}"
         vr.decrypt_member(reader.zf, record, staged)
         placements.append(_Placement(
             member=record["member"], staged=staged, final=target_home / root_rel,
