@@ -547,7 +547,7 @@ def _build_code_checkout(inst: FakeHermesInstall) -> None:
         git("init", "-q", "-b", "main")
         git("add", "-A")
         git("commit", "-q", "-m", "seed")
-        git("tag", f"v{s.release_date.replace('.', '.')}" if False else "v2026.8.13")
+        git("tag", f"v{s.release_date}")
         if s.with_dirty_checkout:
             launcher = code / "hermes"
             launcher.write_text(launcher.read_text() + "# local tweak\n", encoding="utf-8")
