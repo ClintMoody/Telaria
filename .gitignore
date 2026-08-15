@@ -4,7 +4,9 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
-dist/
+dist/*
+!dist/talaria.pyz
+!dist/talaria.pyz.sha256
 .venv/
 venv/
 .pytest_cache/
