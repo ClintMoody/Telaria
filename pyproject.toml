@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "talaria-hermes"
+version = "1.0.0"
+description = "Talaria — the Hermes Agent migration assistant. Package a whole Hermes install into one portable bundle and restore it on any machine."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Clint Moody" }]
+keywords = ["hermes-agent", "migration", "backup", "nous-research"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Environment :: Web Environment",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Archiving :: Backup",
+]
+# The mandatory core is stdlib-only by design: the tool must run on a fresh target
+# machine before Hermes (or anything else) is installed there.
+dependencies = []
+
+[project.optional-dependencies]
+vault = ["cryptography>=41"]
+dev = ["pytest>=7.4", "playwright>=1.40"]
+
+[project.scripts]
+talaria = "talaria.cli:main"
+hermes-migrate = "talaria.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+talaria = ["gui/assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
