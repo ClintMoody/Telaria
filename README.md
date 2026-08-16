@@ -1,145 +1,182 @@
-# ⤞ Talaria — moves your Hermes agent to a new computer
+<p align="center">
+  <img src="docs/img/banner.png" alt="Talaria — moves your Hermes agent to a new computer" width="100%">
+</p>
 
-Pack your whole [Hermes Agent](https://github.com/NousResearch/hermes-agent) — soul,
-memories, skills (including the ones the agent wrote itself), scheduled tasks,
-conversations, pairings, and settings — into **one file**. Move it to any other
-computer. Unpack it there, verified, with an undo button.
+<p align="center">
+  <img src="https://img.shields.io/badge/platforms-Linux%20·%20macOS%20·%20Windows%20·%20WSL%20·%20Termux-6a3de8?style=for-the-badge" alt="Platforms">
+  <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/dependencies-zero%20(stdlib)-1a7f37?style=for-the-badge" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/tests-269%20passing-1a7f37?style=for-the-badge" alt="269 tests">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT">
+</p>
 
-*Community tool. Not affiliated with Nous Research.*
+<p align="center">
+  <b>Pack your whole <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> into one file. Move it to any computer. Unpack it there — verified, with an undo button.</b>
+</p>
+
+<p align="center">
+  <i>Soul · memories · skills (including the ones the agent wrote itself) · scheduled jobs · conversations · pairings · settings.</i><br>
+  <sub>Community tool. Not affiliated with Nous Research.</sub>
+</p>
+
+---
 
 ```
-old computer                                new computer
-────────────                                ────────────
-$ talaria            →  hermes-atlas-2026-08-15.hermespack  →  $ talaria
-  (pack wizard)             one self-contained file              (apply wizard)
+   the old computer                                       the new computer
+  ┌──────────────────┐         one portable file         ┌──────────────────┐
+  │   $ talaria      │  ───►  hermes-atlas-2026-08.   ──► │   $ talaria      │
+  │   pack wizard    │            hermespack              │   apply wizard   │
+  └──────────────────┘                                    └──────────────────┘
+   read-only, untouched                                   staged · backed-up · verified · undoable
 ```
 
-**The three promises** (product law, enforced by the test suite):
+<table>
+<tr>
+<td width="50%"><img src="docs/img/s2-review.png" alt="Review — what travels"></td>
+<td width="50%"><img src="docs/img/t2-preflight-dark.png" alt="Preflight — who does what"></td>
+</tr>
+<tr>
+<td align="center"><b>Pack:</b> everything portable, pre-selected — with sizes, provenance, and what <i>won't</i> travel.</td>
+<td align="center"><b>Apply:</b> every check grouped by who acts — ready, we'll-fix, needs-you, can't-come-along.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/img/s3-keys.png" alt="Keys — checklist or vault"></td>
+<td width="50%"><img src="docs/img/t4-finish-dark.png" alt="Finish — checklist and undo"></td>
+</tr>
+<tr>
+<td align="center"><b>Your one decision:</b> keys stay on a checklist, or travel in an encrypted vault.</td>
+<td align="center"><b>Done:</b> verified counts, paste-in keys, re-pair cards, and one-click undo.</td>
+</tr>
+</table>
+
+## The three promises
+
+> Enforced by the test suite, printed on every data-touching screen.
 
 1. **Nothing on the old computer is changed or deleted.** Capture is strictly read-only.
-2. **Anything changed on the new computer can be undone.** Apply is transactional —
-   safety copy first, journaled, verified, `talaria rollback` any time.
-3. **Anything that can't move automatically goes on your checklist.** Nothing silently
-   vanishes.
+2. **Anything changed on the new computer can be undone.** Apply is transactional — safety copy first, journaled, verified, `talaria rollback` any time.
+3. **Anything that can't move automatically goes on your checklist.** Nothing silently vanishes.
 
-| | |
-|---|---|
-| ![Review screen](docs/img/s2-review.png) | ![Finish screen](docs/img/t4-finish.png) |
-| *What travels — everything portable, pre-selected* | *Moved in, verified, with the keys checklist* |
-
-## Install
+## Quick start
 
 ```bash
-pipx install talaria-migration        # or: pip install talaria-migration
-talaria                               # opens the wizard (GUI in your browser)
+pipx install talaria-migration          # or: pip install talaria-migration
+talaria                                 # opens the wizard in your browser
 ```
 
-No dependencies. The core is pure Python 3.9+ standard library — it runs on a fresh
-machine before Hermes (or anything else) is installed there. Or grab the single-file
-[`talaria.pyz`](dist/) and run `python3 talaria.pyz`. Optional: `pip install
-cryptography` enables the encrypted key vault.
+Zero dependencies — the core is pure Python 3.9+ standard library, so it runs on a fresh
+machine before Hermes is even installed there. Or carry the single self-contained file:
 
-Works on Linux, macOS, Windows (native `%LOCALAPPDATA%\hermes` and WSL), and Termux.
+```bash
+python3 talaria.pyz                      # 147 KiB, runs on any Python
+```
 
-## Sixty seconds of usage
+<details>
+<summary><b>Sixty seconds, on the command line</b></summary>
 
 ```bash
 # Old machine — pack (2 questions, Enter accepts both):
 talaria pack
-# → hermes-atlas-2026-08-15.hermespack  + a keys checklist (HTML)
+#  → hermes-atlas-2026-08-15.hermespack   + a keys checklist (HTML)
 
 # New machine — apply:
 talaria apply hermes-atlas-2026-08-15.hermespack
-# → preflight verdicts → safety copy → move in → verify → finish checklist
+#  → preflight verdicts → safety copy → move in → verify → finish checklist
 
-# Any time until you trust the result:
+# Not happy? Any time until you trust it:
 talaria rollback
 ```
 
-Prefer clicking? `talaria gui` serves a localhost wizard (token-authed, 127.0.0.1
-only). Headless VPS? The CLI has full capability parity, plus `--json` everywhere.
+Full capability parity between the GUI and CLI — `--json` everywhere, `--dry-run` on
+everything that writes. Most Hermes installs live on a `$5` VPS; Talaria is built for SSH.
+</details>
 
-## What makes it different
+## Why it's not just a zip
 
-Talaria doesn't copy a folder. It **understands** the install:
+Talaria doesn't copy a folder — it **understands the install**, because it was built from a
+deep reading of the Hermes source ([research notes](docs/research/)).
 
-- **Typed inventory.** Every file classifies into a catalog built from the Hermes
-  source (40+ artifact kinds across 20 families) — `talaria why <path>` explains any
-  file's classification and cites the reason.
-- **Stock vs. yours.** Hermes is self-improving: it edits its own skills. Talaria tags
-  every skill — stock-pristine, stock-**modified** (with per-file diffs), hub-installed,
-  org, agent-created, user-created — using Hermes' own provenance mechanisms
-  (`.bundled_manifest`, hub lock, `.usage.json`), never a parallel scheme. Config is
-  diffed against the shipped defaults ("17 of 70 sections customized"); so is SOUL.md.
-- **Dependency verdicts per target OS.** Every cron job, skill, MCP server, and
-  provider is analyzed for what it needs — bash on Windows? impossible, and it says so
-  *before* you move. Works fully offline against a declared `--target-os`.
-- **Machine-bound intelligence.** Gateway state, device-linked WhatsApp/Signal
-  sessions, locks, PIDs, caches — excluded on *both* sides (even a hostile or stale
-  bundle can't plant them), with checklist cards for the one-minute re-pair instead.
-- **Cron migrated correctly.** Runtime claims scrubbed (a stale claim silently
-  suppresses the first fire), interval anchoring preserved, monitor baselines moved
-  with their state, `context_from` chains kept together, timezone changes flagged with
-  the exact consequence.
-- **Live-database safety.** SQLite stores are snapshotted via the backup API
-  (WAL-consistent), integrity-checked, and never file-copied hot.
-- **Secrets never travel in plaintext.** ~40 kinds of keys/tokens stay OUT of the
-  bundle by default — you get a checklist with provider links and paste-back on the
-  new machine (values land in `.env` at 0600, never echoed). Opt-in encrypted vault
-  (scrypt·AES-256-GCM) if you want keys to travel; "lock everything" also encrypts
-  conversations.
-- **Transactional apply.** Write-ahead journal, per-file backups, hash-verified
-  placement, automatic rollback on any failure — a mid-apply power loss leaves a
-  machine that restores to byte-identical pre-apply state (tested by killing the
-  process mid-flight).
-- **Reports that stand alone.** A System Overview of everything your install is and
-  touches, and a Migration Report of everything that happened — single-file HTML,
-  redacted by default, printable, zero external requests.
-- **The agent helps, but is never trusted.** `talaria deepscan` generates a skill your
-  Hermes runs to report what it touches day-to-day (names, never values). Ingest
-  verifies every claim, refuses sensitive paths outright, and can only *suggest*
-  additions you approve.
+| | |
+|---|---|
+| 🧬 **Stock vs. yours** | Hermes edits its own skills. Talaria tags every skill — stock-pristine, stock-**modified** (with per-file diffs), hub, org, agent-created, user-created — using Hermes' own provenance data. Config and SOUL.md are diffed against the shipped defaults. |
+| 🧩 **Dependency verdicts per target OS** | Every cron job, skill, MCP server, and provider is checked for what it needs. `bash` on Windows? Marked **impossible** *before* you move — fully offline against a declared `--target-os`. |
+| 🔐 **Secrets never travel in plaintext** | ~40 kinds of keys stay OUT of the bundle by default — you get a checklist with provider links and paste-back on the new machine. Opt-in vault (scrypt · AES-256-GCM) if you want them to travel. |
+| 🧱 **Machine-bound intelligence** | Gateway state, device-linked WhatsApp/Signal sessions, locks, PIDs — excluded on *both* sides (even a hostile bundle can't plant them), with one-minute re-pair cards instead. |
+| ⏰ **Cron migrated correctly** | Runtime claims scrubbed, interval anchoring preserved, monitor baselines carried, `context_from` chains kept together, timezone shifts flagged with the exact consequence. |
+| 💾 **Live databases stay intact** | SQLite stores are snapshotted WAL-consistently and integrity-checked — never file-copied hot. |
+| ♻️ **Transactional apply** | Write-ahead journal, per-file backups, hash-verified placement, automatic rollback. A power loss mid-apply leaves a machine that restores to byte-identical pre-apply state — tested by killing the process mid-flight. |
+| 📄 **Reports that stand alone** | A System Overview of everything your install is and touches, and a Migration Report of everything that happened — self-contained HTML, redacted by default, printable. |
+| 🧭 **The agent helps, never decides** | `talaria deepscan` hands your Hermes a skill to report what it touches day-to-day (names, never values); ingest verifies every claim, refuses sensitive paths, and can only *suggest* additions you approve. |
 
-## The comparison you should demand
+## Put the other tool to shame
 
-Against the other Hermes migration tool ([Hermes-Agent-Converter](https://github.com/X3N064/Hermes-Agent-Converter)) —
-every row traces to a documented weakness (docs/research/competitor-teardown.md) and a
-requirement our test suite enforces:
+Every row traces to a documented weakness of the other Hermes migration tool
+([teardown](docs/research/competitor-teardown.md)) and a requirement our tests enforce.
 
-| | Hermes-Agent-Converter | **Talaria** |
-|---|---|---|
+| | [Hermes-Agent-Converter](https://github.com/X3N064/Hermes-Agent-Converter) | **Talaria** |
+|---|:---:|:---:|
 | Platforms | Linux/WSL ↔ macOS only | Linux · macOS · **Windows** · WSL · Termux |
-| GUI | tkinter (often not installed) | localhost web app, zero deps + full CLI |
-| Understands files | no — blind tree copy | typed catalog, `why` for every path |
-| Stock vs. modified skills | no | six provenance tags + per-file diffs |
-| Dependencies checked | no | per-target-OS verdicts, offline capable |
-| Secrets | **plaintext in the zip** | excluded + checklist, or encrypted vault |
-| Machine-bound state | copied verbatim (breaks gateway) | excluded both sides + re-pair cards |
-| Live databases | raw file copy (WAL corruption) | backup-API snapshots + integrity checks |
-| Path rewriting | blanket regex over code/JSON | structural per-format edits, previewable |
-| Apply | extract over the live install | transactional, journaled, auto-rollback |
-| Zip-slip guard | broken prefix check | full hardening (traversal, symlinks, collisions, bombs) |
-| Verification | none | per-file hashes + health checks + reports |
-| Tests | none | 269 (unit, integration, crash-injection, GUI, browser, adversarial) |
+| GUI | tkinter (often missing) | localhost web app, zero deps + full CLI |
+| Understands files | ❌ blind tree copy | ✅ typed catalog, `why` for every path |
+| Stock vs. modified skills | ❌ | ✅ six provenance tags + diffs |
+| Dependency checks | ❌ | ✅ per-target-OS, offline capable |
+| Secrets | ❌ **plaintext in the zip** | ✅ excluded + checklist, or encrypted vault |
+| Machine-bound state | ❌ copied (breaks gateway) | ✅ excluded both sides + re-pair cards |
+| Live databases | ❌ raw copy (WAL corruption) | ✅ snapshot + integrity check |
+| Path rewriting | ❌ blanket regex over code | ✅ structural, per-format, previewable |
+| Apply | ❌ extract over live install | ✅ transactional, journaled, auto-rollback |
+| Zip-slip / bombs | ❌ broken prefix guard | ✅ full hardening + adversarial tests |
+| Verification | ❌ none | ✅ per-file hashes + health checks |
+| Tests | ❌ none | ✅ 269 (unit, integration, crash-injection, GUI, browser, adversarial) |
 
-## The details, if you want them
+## Prefer the terminal?
 
-- [User guide](docs/user-guide.md) — both sides of a move, every option
-- [FAQ](docs/faq.md) — vault vs checklist, clone vs replace, profiles, Termux
-- [Troubleshooting](docs/troubleshooting.md) — every TAL error code, with fixes
-- [Security](docs/security.md) — threat model; what a bundle is and is not
-- [Bundle format](docs/bundle-format.md) — `.hermespack` layout, read-forever policy
-- [Design](docs/design/SPEC.md) — the binding spec (122 requirements) and
-  [architecture](docs/design/ARCHITECTURE.md), produced by an adversarial design
-  committee; [research](docs/research/) — the Hermes internals ground truth
+`talaria gui` is optional. The full surface is on the command line, with `--json`
+everywhere:
+
+```
+talaria                 wizard (auto-detects direction)
+talaria scan            typed inventory of the install
+talaria diff            stock-vs-yours: skills | config | checkout
+talaria deps            dependency verdicts (--target-os, --live)
+talaria pack            build the bundle (+ keys checklist)
+talaria inspect         look inside a bundle (--verify --deps --salvage …)
+talaria preflight       check THIS machine against a bundle
+talaria apply           transactional restore (--dry-run, --only/--skip)
+talaria verify          re-verify; --watch for the heartbeat
+talaria rollback        undo the last apply
+talaria report          System Overview (html / md / json)
+talaria why PATH        what is this file, does it travel, and why
+talaria deepscan        agent-assisted discovery (generate | ingest)
+```
+
+## Docs
+
+| | |
+|---|---|
+| [**User guide**](docs/user-guide.md) | both sides of a move, every option |
+| [**FAQ**](docs/faq.md) | vault vs checklist, clone vs replace, profiles, Termux |
+| [**Troubleshooting**](docs/troubleshooting.md) | every `TAL-` error code, with fixes |
+| [**Security**](docs/security.md) · [**Review**](docs/security-review.md) | threat model; the adversarial hardening pass and its 11 fixed findings |
+| [**Bundle format**](docs/bundle-format.md) | `.hermespack` layout, read-forever policy |
+| [**Design**](docs/design/SPEC.md) · [**Architecture**](docs/design/ARCHITECTURE.md) | the binding spec (122 requirements) from an adversarial design committee |
+
+## How it was built
+
+An adversarial process, start to finish: five agents mapped the Hermes source → four design
+lenses proposed, three adversarial critics tore them apart, and a binding spec settled it →
+spec/TDD implementation → and after "done," a hostile bug-hunt found **11 real defects the
+267-test suite missed** (a vault arbitrary-write, unappliable bundles, a rollback that could
+lose database WAL data) — all fixed with reproducing tests. That story is in
+[`docs/`](docs/).
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-python3 -m pytest            # the full suite
-python3 scripts/build_pyz.py # single-file build
-python3 scripts/gui_walkthrough.py  # real-browser wizard test + screenshots
+python3 -m pytest                       # the full suite (269 tests)
+python3 scripts/build_pyz.py            # single-file build
+python3 scripts/capture_screens.py      # regenerate the screenshots (light + dark)
 ```
 
-MIT license.
+<p align="center"><sub>MIT licensed · <code>⤞</code> Talaria, for Hermes' winged sandals</sub></p>
