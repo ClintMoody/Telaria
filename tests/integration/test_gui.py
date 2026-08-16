@@ -119,6 +119,44 @@ class TestSecurity:
         status, _ = request(gui["port"], "GET", "/assets/..%2f..%2fetc%2fpasswd")
         assert status in (403, 404)
 
+    def test_fonts_served_locally(self, gui):
+        """The reskin serves Inter/JetBrains Mono woff2 from the vetted fonts/ subdir
+        (no CDN) — a legit face must return 200 with the woff2 content-type, pre-auth."""
+        import http.client as hc
+
+        conn = hc.HTTPConnection("127.0.0.1", gui["port"], timeout=10)
+        conn.request("GET", "/assets/fonts/Inter-400.woff2",
+                     headers={"Host": f"127.0.0.1:{gui['port']}"})
+        res = conn.getresponse()
+        blob = res.read()
+        headers = dict(res.getheaders())
+        conn.close()
+        assert res.status == 200
+        assert headers.get("Content-Type") == "font/woff2"
+        assert blob[:4] == b"wOF2"  # woff2 magic — real font bytes, not an error page
+
+    def test_font_subdir_traversal_blocked(self, gui):
+        """The fonts/ allowance is a single flat woff2 only — no nested paths, no escape."""
+        for bad in ("/assets/fonts/..%2f..%2fetc%2fpasswd",
+                    "/assets/fonts/nested%2fx.woff2",
+                    "/assets/fonts/app.css",
+                    "/assets/fonts/missing.woff2"):
+            status, _ = request(gui["port"], "GET", bad)
+            assert status in (403, 404), bad
+
+    def test_csp_allows_self_fonts_only(self, gui):
+        """CSP must permit same-origin fonts and nothing external."""
+        import http.client as hc
+
+        conn = hc.HTTPConnection("127.0.0.1", gui["port"], timeout=10)
+        conn.request("GET", "/", headers={"Host": f"127.0.0.1:{gui['port']}"})
+        res = conn.getresponse()
+        res.read()
+        csp = dict(res.getheaders()).get("Content-Security-Policy", "")
+        conn.close()
+        assert "font-src 'self'" in csp
+        assert "default-src 'self'" in csp
+
 
 class TestJobs:
     def test_scan_job_lifecycle(self, gui):
