@@ -32,6 +32,11 @@ from talaria.engine.bundle import (
 )
 from talaria.engine.plan import RewritePlan, build_plan, execute_plan
 from talaria.engine.preflight import PreflightReport, run_preflight, json_loads_safe
+from talaria.engine.sqlite_snap import (
+    SqliteSnapshotError,
+    is_sqlite_file,
+    snapshot_db,
+)
 from talaria.engine.provenance import (
     HashSemantics,
     classify_skills,
@@ -609,31 +614,46 @@ def _backup(placements: List[_Placement], target_home: Path, backup_dir: Path,
     log.emit("phase", "backup", "Making the safety copy")
     seen: Set[Path] = set()
     seq = 0
+    is_db_by_final = {p.final: p.is_db for p in placements}
     for placement in placements:
         final = placement.final
         if final in seen or not final.exists():
             continue
         seen.add(final)
         seq += 1
-        backup_path = backup_dir / f"{seq:05d}"
-        journal.write("op.intent", op_id=f"bk{seq:05d}", kind="backup",
-                      final=str(final), backup=str(backup_path),
-                      pre_sha=_safe_sha(final))
-        shutil.copy2(final, backup_path)
-        journal.write("op.done", op_id=f"bk{seq:05d}", kind="backup",
-                      final=str(final), backup=str(backup_path))
+        _backup_one(final, backup_dir / f"{seq:05d}", placement.is_db,
+                    f"bk{seq:05d}", journal)
     # Quick-state floor: back up even when unselected (they may be replaced by sweeps).
     for rel in QUICK_STATE_FLOOR:
         final = target_home / rel
         if final.exists() and final not in seen:
+            seen.add(final)
             seq += 1
-            backup_path = backup_dir / f"{seq:05d}"
-            journal.write("op.intent", op_id=f"bk{seq:05d}", kind="backup",
-                          final=str(final), backup=str(backup_path),
-                          pre_sha=_safe_sha(final))
-            shutil.copy2(final, backup_path)
-            journal.write("op.done", op_id=f"bk{seq:05d}", kind="backup",
-                          final=str(final), backup=str(backup_path))
+            _backup_one(final, backup_dir / f"{seq:05d}",
+                        rel.endswith(".db") or is_db_by_final.get(final, False),
+                        f"bk{seq:05d}", journal)
+
+
+def _backup_one(final: Path, backup_path: Path, is_db: bool, op_id: str,
+                journal: Journal) -> None:
+    """Back up one target file. Databases are snapshotted (WAL folded into a complete,
+    self-contained copy) so a rollback restores every committed transaction — a plain
+    file-copy of a hot WAL database loses un-checkpointed frames and its sidecars.
+    """
+    journal.write("op.intent", op_id=op_id, kind="backup", final=str(final),
+                  backup=str(backup_path), is_db=bool(is_db))
+    used_snapshot = False
+    if is_db and is_sqlite_file(final):
+        try:
+            snapshot_db(final, backup_path)
+            used_snapshot = True
+        except SqliteSnapshotError:
+            used_snapshot = False
+    if not used_snapshot:
+        shutil.copy2(final, backup_path)
+    journal.write("op.done", op_id=op_id, kind="backup", final=str(final),
+                  backup=str(backup_path), backup_sha=_safe_sha(backup_path),
+                  is_db=bool(is_db))
 
 
 def _do_apply(placements: List[_Placement], target_home: Path, journal: Journal,
@@ -648,9 +668,14 @@ def _do_apply(placements: List[_Placement], target_home: Path, journal: Journal,
                       kind="db_place" if placement.is_db else "replace_file",
                       final=str(final), staged=str(placement.staged),
                       expected_sha=placement.expected_sha,
+                      is_db=bool(placement.is_db),
                       existed=final.exists())
         final.parent.mkdir(parents=True, exist_ok=True)
         if placement.is_db:
+            # The pre-apply DB backup is a WAL-folded snapshot (see _backup_one), so the
+            # old sidecars' committed data is already preserved and rollback restores a
+            # complete database. Removing the stale sidecars here is therefore safe; the
+            # journal marks the placement is_db so rollback clears any sidecars again.
             for suffix in ("-wal", "-shm", "-journal"):
                 sidecar = Path(str(final) + suffix)
                 if sidecar.exists():
@@ -759,42 +784,61 @@ def _rollback(journal: Journal, target_home: Path) -> None:
     rollback_journal(Path(journal.path), target_home)
 
 
+def _clear_db_sidecars(final: Path) -> None:
+    for suffix in ("-wal", "-shm", "-journal"):
+        try:
+            Path(str(final) + suffix).unlink()
+        except OSError:
+            pass
+
+
 def rollback_journal(journal_path: Path, target_home: Path) -> List[str]:
-    """Reverse-walk a journal restoring pre-apply state; re-hash verified (R-APPLY-02)."""
+    """Reverse-walk a journal restoring pre-apply state; re-hash verified (R-APPLY-02).
+
+    Handles the crash case: an op whose ``op.intent`` was fsynced but whose ``op.done``
+    never landed still mutated (or half-mutated) the target, so it MUST be rolled back
+    too — keying only on ``op.done`` would leave the half-applied file in place.
+    """
     records = Journal.read_all(journal_path)
     restored: List[str] = []
     backups: Dict[str, dict] = {}
+    done_backup_sha: Dict[str, str] = {}
     for record in records:
         if record.get("event") == "op.intent" and record.get("kind") in (
                 "backup", "delete_stale"):
             backups[record["final"]] = record
+        if record.get("event") == "op.done" and record.get("kind") == "backup":
+            if record.get("backup_sha"):
+                done_backup_sha[record["final"]] = record["backup_sha"]
 
-    for record in reversed(records):
-        if record.get("event") != "op.done":
-            continue
+    # Every mutating op that at least reached op.intent, newest first. An op with an
+    # intent but no matching done is the crashed op — still rolled back.
+    intents = [r for r in records if r.get("event") == "op.intent"
+               and r.get("kind") in ("replace_file", "db_place", "delete_stale")]
+    for record in reversed(intents):
         kind = record.get("kind")
         final_str = record.get("final", "")
         final = Path(final_str)
-        if kind in ("replace_file", "db_place", "rewrite"):
-            if kind == "rewrite":
-                continue  # rewrites happened in stage — final files covered below
+        is_db = bool(record.get("is_db"))
+        if kind in ("replace_file", "db_place"):
             intent = backups.get(final_str)
-            if intent is not None:
+            if intent is not None and Path(intent["backup"]).exists():
                 backup_path = Path(intent["backup"])
-                if backup_path.exists():
-                    # COPY, never move: the pre-apply safety copy survives rollback
-                    # intact (Promise 2 / R-APPLY-02).
-                    shutil.copy2(backup_path, final)
-                    pre_sha = intent.get("pre_sha")
-                    if pre_sha and _safe_sha(final) != pre_sha:
-                        raise TalariaError(
-                            "TAL-502",
-                            f"rollback verification failed for {final}")
-                    restored.append(final_str)
-                    continue
-            # No backup — the file did not exist before; remove what we created.
-            if final.exists():
-                final.unlink()
+                # COPY, never move: the pre-apply safety copy survives rollback intact.
+                if is_db:
+                    _clear_db_sidecars(final)
+                shutil.copy2(backup_path, final)
+                expect = done_backup_sha.get(final_str)
+                if expect and _safe_sha(final) != expect:
+                    raise TalariaError(
+                        "TAL-502", f"rollback verification failed for {final}")
+                restored.append(final_str)
+            elif not record.get("existed", False):
+                # The file did not exist before this apply — remove what we created.
+                if final.exists():
+                    final.unlink()
+                if is_db:
+                    _clear_db_sidecars(final)
                 restored.append(final_str + " (removed)")
         elif kind == "delete_stale":
             intent = backups.get(final_str)

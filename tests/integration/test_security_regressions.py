@@ -62,6 +62,84 @@ def _forge_vault_bundle(tmp_path: Path, hostile_root_rel: str) -> Path:
     return hostile
 
 
+class TestRollbackDbIntegrity:
+    """Finding #3/#6/#9: rollback must restore the target DB's committed WAL data."""
+
+    def test_wal_data_survives_rollback(self, tmp_path, monkeypatch):
+        import sqlite3
+
+        from talaria.engine import apply as apply_mod
+
+        inst = build_fake_install(tmp_path / "src", FakeInstallSpec())
+        result = scan(inst.home)
+        bundle = tmp_path / "b.hermespack"
+        pack(result, bundle, PackOptions())
+
+        # Target has a state.db with un-checkpointed WAL frames (a crashed gateway).
+        target = tmp_path / "target" / ".hermes"
+        target.mkdir(parents=True)
+        db = target / "state.db"
+        conn = sqlite3.connect(db)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("CREATE TABLE sessions (session_key TEXT PRIMARY KEY, cwd TEXT,"
+                     " git_branch TEXT, git_repo_root TEXT, created_at TEXT)")
+        conn.execute("INSERT INTO sessions VALUES ('pre','/precious','m','/p','t')")
+        conn.commit()   # committed but left in WAL — keep the connection open
+        assert (target / "state.db-wal").exists()
+        conn2 = sqlite3.connect(db)  # second handle keeps WAL uncheckpointed
+        conn.close()
+
+        # Force a verify failure so apply rolls back after mutating.
+        monkeypatch.setattr(apply_mod, "_verify_gating",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                apply_mod.TalariaError("TAL-602", "forced")))
+        outcome = apply_bundle(bundle, target, ApplyOptions(consent_executable=True,
+                                                            conflict_policy="overwrite"))
+        conn2.close()
+        assert outcome.status == "rolled_back"
+        # The pre-apply committed row must still be readable after rollback.
+        check = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        rows = check.execute("SELECT cwd FROM sessions WHERE session_key='pre'").fetchall()
+        check.close()
+        assert rows == [("/precious",)], "committed WAL data lost across rollback"
+
+    def test_crashed_inflight_op_rolled_back(self, tmp_path, monkeypatch):
+        """An op that fsynced op.intent but crashed before op.done must still revert."""
+        from talaria.engine import apply as apply_mod
+        from talaria.hashes import file_sha256
+
+        inst = build_fake_install(tmp_path / "src", FakeInstallSpec())
+        result = scan(inst.home)
+        bundle = tmp_path / "b.hermespack"
+        pack(result, bundle, PackOptions())
+
+        target = tmp_path / "target" / ".hermes"
+        (target / "cron").mkdir(parents=True)
+        (target / "SOUL.md").write_text("ORIGINAL soul\n")
+        before = file_sha256(target / "SOUL.md")
+
+        calls = {"n": 0}
+        real_place = apply_mod._place_file
+
+        def crash_after_partial(staged, final):
+            calls["n"] += 1
+            if "SOUL.md" in str(final):
+                # Simulate a crash AFTER the target file was mutated but before op.done:
+                # write the new content, then raise as if killed.
+                real_place(staged, final)
+                raise KeyboardInterrupt("killed right after replace")
+            real_place(staged, final)
+
+        monkeypatch.setattr(apply_mod, "_place_file", crash_after_partial)
+        outcome = apply_bundle(bundle, target, ApplyOptions(consent_executable=True,
+                                                            conflict_policy="overwrite"))
+        monkeypatch.setattr(apply_mod, "_place_file", real_place)
+        assert outcome.status == "rolled_back"
+        # The half-applied SOUL.md must be restored to its original content.
+        assert file_sha256(target / "SOUL.md") == before, \
+            "crashed in-flight op was not rolled back"
+
+
 class TestExternalStateBundle:
     """Finding #2/#4: memory-provider external state must not make bundles unappliable."""
 
