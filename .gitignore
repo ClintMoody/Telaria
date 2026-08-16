@@ -26,3 +26,6 @@ htmlcov/
 !tests/fixtures/**/*.hermespack
 .talaria-work/
 node_modules/
+
+# stray `script` command output
+typescript
