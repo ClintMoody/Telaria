@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platforms-Linux%20·%20macOS%20·%20Windows%20·%20WSL%20·%20Termux-b8860b?style=for-the-badge" alt="Platforms">
+  <img src="https://img.shields.io/badge/platforms-Linux%20·%20macOS%20·%20Windows%20·%20WSL%20·%20Termux-0053fd?style=for-the-badge" alt="Platforms">
   <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/dependencies-zero%20(stdlib)-1a7f37?style=for-the-badge" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/tests-272%20passing-1a7f37?style=for-the-badge" alt="272 tests">

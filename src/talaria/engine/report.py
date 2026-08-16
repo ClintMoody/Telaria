@@ -220,19 +220,19 @@ def render_md(data: ReportData) -> str:
 
 
 _CSS = """
-:root { --bg:#f4f1e9; --fg:#1b1a17; --muted:#726e64; --line:#e2ddd0; --card:#fbfaf6;
-        --raised:#f0ece1; --ok:#1a7f37; --warn:#9a6700; --fail:#c0392f;
-        --gold:#8a6508; --gold-soft:rgba(138,101,8,0.09); color-scheme:light; }
+:root { --bg:#f8faff; --fg:#17171a; --muted:#5f6376; --line:#dbe4f7; --card:#ffffff;
+        --raised:#edf2fe; --ok:#1a7f37; --warn:#9a6700; --fail:#c72e4d;
+        --accent:#0053fd; --accent-soft:rgba(0,83,253,0.07); color-scheme:light; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#07070d; --fg:#e8e4dc; --muted:#9a968e; --line:#1e1e30; --card:#0f0f18;
-          --raised:#14142a; --ok:#46c26a; --warn:#d9a62e; --fail:#ef5f57;
-          --gold:#ffd700; --gold-soft:rgba(255,215,0,0.10); color-scheme:dark; } }
+  :root { --bg:#0d2f86; --fg:#ffe6cb; --muted:#b5c7f3; --line:#3158ad; --card:#12378f;
+          --raised:#1b45a4; --ok:#57cf85; --warn:#e6b24d; --fail:#ff8f84;
+          --accent:#6d9bff; --accent-soft:rgba(109,155,255,0.14); color-scheme:dark; } }
 @font-face { font-family:'Inter'; font-weight:400 700; font-display:swap;
              src:local('Inter'); }
 * { box-sizing: border-box; }
 :root { --display:'Collapse','Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 body { margin:0;
-       background:radial-gradient(1000px 420px at 82% -6%,var(--gold-soft),transparent 70%),var(--bg);
+       background:radial-gradient(1000px 420px at 82% -6%,var(--accent-soft),transparent 70%),var(--bg);
        color:var(--fg);
        font:15px/1.6 'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        -webkit-font-smoothing:antialiased; }
@@ -241,7 +241,7 @@ header.masthead { border-bottom:1px solid var(--line); padding-bottom:1.25rem;
                   margin-bottom:2rem; }
 h1 { font-family:var(--display); font-size:1.75rem; font-weight:700; letter-spacing:.01em;
      line-height:1.1; margin:0 0 .3rem; }
-h1 .wing { color:var(--gold); font-family:'Inter',sans-serif; }
+h1 .wing { color:var(--accent); font-family:'Inter',sans-serif; }
 .sub { color:var(--muted); margin:0; }
 h2 { font-size:1.1rem; font-weight:600; margin:2.2rem 0 .8rem;
      border-bottom:1px solid var(--line); padding-bottom:.4rem; }
@@ -262,7 +262,7 @@ th { color:var(--muted); font-weight:600; }
 code { font-family:'JetBrains Mono','SFMono-Regular','Cascadia Code','DejaVu Sans Mono',monospace;
        background:var(--raised); border:1px solid var(--line); border-radius:5px;
        padding:.08rem .38rem; font-size:.84em; }
-.quote { font-style:italic; color:var(--muted); border-left:2px solid var(--gold);
+.quote { font-style:italic; color:var(--muted); border-left:2px solid var(--accent);
          padding-left:.8rem; margin:.9rem 0; }
 footer { color:var(--muted); font-size:.8rem; margin-top:3rem;
          border-top:1px solid var(--line); padding-top:1rem; }

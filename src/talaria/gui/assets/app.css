@@ -1,8 +1,9 @@
 /* Talaria wizard — Nous Research / Hermes Agent visual identity.
-   Warm near-black + signature gold, Inter + JetBrains Mono, flat surfaces grouped by
-   whitespace and hairlines (per the Hermes Desktop design system: flat, not boxed;
-   borderless elevation; tokens over literals). Fully self-contained: fonts are served
-   locally by the wizard, never from a CDN. */
+   The Hermes desktop "nous"/Psyche theme: deep royal blue + warm cream (dark), cool
+   blue-white + Nous blue (light); Collapse for the brand wordmark, Inter for text,
+   JetBrains Mono for code. Flat surfaces grouped by whitespace and hairlines (per the
+   Hermes Desktop design system: flat, not boxed; borderless elevation; tokens over
+   literals). Fully self-contained: fonts are served locally by the wizard, never a CDN. */
 
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 400;
   font-display: swap; src: url('/assets/fonts/Inter-400.woff2') format('woff2'); }
@@ -24,12 +25,13 @@
   font-display: swap; src: url('/assets/fonts/Collapse-Bold.woff2') format('woff2'); }
 
 :root {
-  /* Light — warm paper with the accessible bronze-gold accent (Nous docs light). */
-  --bg: #f4f1e9; --panel: #fbfaf6; --raised: #f0ece1; --fg: #1b1a17;
-  --muted: #726e64; --faint: #9a968a; --line: #e2ddd0; --line-strong: #d3cdbd;
-  --gold: #8a6508; --gold-strong: #6e4f00; --gold-soft: rgba(138,101,8,0.09);
-  --ok: #1a7f37; --warn: #9a6700; --fail: #c0392f;
-  --shadow: 0 1px 2px rgba(24,22,16,.05), 0 18px 44px -20px rgba(24,22,16,.22);
+  /* Light — the Hermes desktop "nous" theme: cool blue-white paper, Nous-blue accent. */
+  --bg: #f8faff; --panel: #ffffff; --raised: #edf2fe; --fg: #17171a;
+  --muted: #5f6376; --faint: #9aa0b4; --line: #dbe4f7; --line-strong: #c6d4f0;
+  --accent: #0053fd; --accent-strong: #0043cf; --accent-soft: rgba(0,83,253,0.07);
+  --on-accent: #ffffff;
+  --ok: #1a7f37; --warn: #9a6700; --fail: #c72e4d;
+  --shadow: 0 1px 2px rgba(13,26,64,.06), 0 18px 44px -20px rgba(13,26,64,.20);
   --radius: 14px; --radius-sm: 10px;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Code', 'Fira Code',
@@ -39,12 +41,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Dark — the signature Hermes Agent look: warm near-black + gold. */
-    --bg: #07070d; --panel: #0f0f18; --raised: #14142a; --fg: #e8e4dc;
-    --muted: #9a968e; --faint: #6f6c66; --line: #1e1e30; --line-strong: #2a2a40;
-    --gold: #ffd700; --gold-strong: #ffbf00; --gold-soft: rgba(255,215,0,0.10);
-    --ok: #46c26a; --warn: #d9a62e; --fail: #ef5f57;
-    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 22px 60px -24px rgba(0,0,0,.75);
+    /* Dark — the signature Hermes "Psyche" look: deep royal blue + warm cream text. */
+    --bg: #0d2f86; --panel: #12378f; --raised: #1b45a4; --fg: #ffe6cb;
+    --muted: #b5c7f3; --faint: #7f97cf; --line: #3158ad; --line-strong: #3a63bd;
+    --accent: #6d9bff; --accent-strong: #8bb0ff; --accent-soft: rgba(109,155,255,0.14);
+    --on-accent: #0b2260;
+    --ok: #57cf85; --warn: #e6b24d; --fail: #ff8f84;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 22px 60px -24px rgba(3,10,38,.7);
     color-scheme: dark;
   }
 }
@@ -53,7 +56,7 @@
 html, body { margin: 0; height: 100%; }
 body {
   background:
-    radial-gradient(1100px 460px at 80% -8%, var(--gold-soft), transparent 70%),
+    radial-gradient(1100px 460px at 80% -8%, var(--accent-soft), transparent 70%),
     var(--bg);
   color: var(--fg);
   font: 15px/1.6 var(--font);
@@ -67,11 +70,11 @@ main { max-width: 47rem; margin: 0 auto; min-height: 100%;
 .brand { display: flex; align-items: baseline; gap: .1rem; }
 .brand b { font-family: var(--display); font-weight: 700; text-transform: uppercase;
   letter-spacing: .09em; font-size: 1.5rem; line-height: .9; color: var(--fg); }
-.brand .wing { color: var(--gold); font-size: 1.35rem; margin-right: .35rem;
+.brand .wing { color: var(--accent); font-size: 1.35rem; margin-right: .35rem;
   align-self: center; }
 .brand .tag { color: var(--muted); font-weight: 400; margin-left: .7rem; font-size: .88rem;
   letter-spacing: 0; align-self: center; }
-.promises { color: var(--muted); font-size: .82rem; border-left: 2px solid var(--gold);
+.promises { color: var(--muted); font-size: .82rem; border-left: 2px solid var(--accent);
   padding-left: .65rem; letter-spacing: .002em; }
 
 .screen { flex: 1; }
@@ -86,27 +89,27 @@ h2 { font-size: 1rem; font-weight: 600; margin: 1.2rem 0 .55rem; letter-spacing:
 p { margin: .4rem 0; }
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
-.step-label { color: var(--gold-strong); font-weight: 600; font-size: .72rem;
+.step-label { color: var(--accent-strong); font-weight: 600; font-size: .72rem;
   text-transform: uppercase; letter-spacing: .14em; margin-bottom: .45rem; }
-@media (prefers-color-scheme: dark) { .step-label { color: var(--gold); } }
+@media (prefers-color-scheme: dark) { .step-label { color: var(--accent); } }
 
-/* buttons — one primary (gold), one quiet fill; flush link variant */
+/* buttons — one primary (accent), one quiet fill; flush link variant */
 .btn { appearance: none; font-family: inherit; border: 1px solid var(--line-strong);
   background: var(--raised); color: var(--fg); border-radius: var(--radius-sm);
   padding: .6rem 1.15rem; font-size: .95rem; font-weight: 500; cursor: pointer;
   transition: transform .06s ease, background .15s ease, border-color .15s ease; }
-.btn:hover { border-color: var(--gold); }
+.btn:hover { border-color: var(--accent); }
 .btn:active { transform: translateY(1px); }
-.btn.primary { background: var(--gold); border-color: var(--gold); color: #16130a;
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent);
   font-weight: 600; }
-.btn.primary:hover { background: var(--gold-strong); border-color: var(--gold-strong); }
+.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .btn.big { padding: .82rem 1.7rem; font-size: 1.02rem; }
 .btn[disabled] { opacity: .45; cursor: default; }
 .btn-row { display: flex; gap: .7rem; margin-top: 1.3rem; flex-wrap: wrap; align-items: center; }
-.linkish { background: none; border: none; color: var(--gold-strong); cursor: pointer;
+.linkish { background: none; border: none; color: var(--accent-strong); cursor: pointer;
   text-decoration: underline; text-underline-offset: 2px; font-size: .84rem;
   padding: 0; font-family: inherit; }
-@media (prefers-color-scheme: dark) { .linkish { color: var(--gold); } }
+@media (prefers-color-scheme: dark) { .linkish { color: var(--accent); } }
 
 /* category rows — grouped by hairlines, no nested boxes */
 .cat-row { display: flex; align-items: center; gap: .8rem; padding: .6rem .1rem;
@@ -115,7 +118,7 @@ p { margin: .4rem 0; }
 .cat-row .name { flex: 1; font-weight: 500; }
 .cat-row .meta { color: var(--muted); font-size: .84rem; white-space: nowrap;
   font-variant-numeric: tabular-nums; }
-.cat-row input[type=checkbox] { width: 1.05rem; height: 1.05rem; accent-color: var(--gold); }
+.cat-row input[type=checkbox] { width: 1.05rem; height: 1.05rem; accent-color: var(--accent); }
 .badge { display: inline-block; border: 1px solid var(--line-strong); border-radius: 999px;
   padding: .02rem .5rem; font-size: .72rem; color: var(--muted); margin-left: .45rem;
   letter-spacing: .01em; }
@@ -135,8 +138,8 @@ p { margin: .4rem 0; }
 .choice { display: flex; gap: .8rem; align-items: flex-start; background: var(--raised);
   border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .95rem 1.05rem;
   margin: .6rem 0; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
-.choice.selected { border-color: var(--gold); background: var(--gold-soft); }
-.choice input { margin-top: .28rem; accent-color: var(--gold); }
+.choice.selected { border-color: var(--accent); background: var(--accent-soft); }
+.choice input { margin-top: .28rem; accent-color: var(--accent); }
 .choice .body { flex: 1; }
 .choice b { display: block; font-weight: 600; margin-bottom: .1rem; }
 
@@ -147,15 +150,15 @@ p { margin: .4rem 0; }
 .gate .mark { width: 1.15rem; text-align: center; font-weight: 700; }
 .gate.ok .mark { color: var(--ok); } .gate.warn .mark { color: var(--warn); }
 .gate.refuse .mark, .gate.fail .mark { color: var(--fail); }
-.gate.consent .mark { color: var(--gold-strong); }
-@media (prefers-color-scheme: dark) { .gate.consent .mark { color: var(--gold); } }
+.gate.consent .mark { color: var(--accent-strong); }
+@media (prefers-color-scheme: dark) { .gate.consent .mark { color: var(--accent); } }
 .gate .fix { color: var(--muted); font-size: .84rem; display: block; margin-top: .1rem; }
 
 /* checklist cards (finish) */
 .check-card { display: flex; gap: .8rem; align-items: flex-start; padding: .75rem .1rem;
   border-bottom: 1px solid var(--line); }
 .check-card:last-child { border-bottom: none; }
-.check-card input[type=checkbox] { margin-top: .3rem; accent-color: var(--gold); }
+.check-card input[type=checkbox] { margin-top: .3rem; accent-color: var(--accent); }
 .check-card .body { flex: 1; }
 code, .check-card code { font-family: var(--mono); background: var(--raised);
   border: 1px solid var(--line); border-radius: 6px; padding: .08rem .4rem;
@@ -164,12 +167,12 @@ code, .check-card code { font-family: var(--mono); background: var(--raised);
 .check-card input[type=password], .check-card input[type=text] { flex: 1;
   background: var(--bg); color: var(--fg); border: 1px solid var(--line-strong);
   border-radius: 8px; padding: .48rem .65rem; font-family: inherit; }
-.check-card input:focus, .choice:focus-within { outline: 2px solid var(--gold-soft);
+.check-card input:focus, .choice:focus-within { outline: 2px solid var(--accent-soft);
   outline-offset: 1px; }
 
-/* boarding pass — the one celebratory surface, gold-dashed */
-.boarding { border: 1px dashed var(--gold); border-radius: var(--radius);
-  padding: 1.3rem 1.5rem; background: var(--gold-soft); box-shadow: var(--shadow); }
+/* boarding pass — the one celebratory surface, accent-dashed */
+.boarding { border: 1px dashed var(--accent); border-radius: var(--radius);
+  padding: 1.3rem 1.5rem; background: var(--accent-soft); box-shadow: var(--shadow); }
 .boarding h1 { margin-top: 0; }
 .boarding .row { display: flex; justify-content: space-between; gap: 1rem; padding: .2rem 0; }
 .boarding .row span:first-child { color: var(--muted); }
@@ -181,9 +184,9 @@ code, .check-card code { font-family: var(--mono); background: var(--raised);
 .log-line { color: var(--muted); font-size: .84rem; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 progress { width: 100%; height: 5px; margin-top: .45rem; border: none;
-  border-radius: 3px; background: var(--line); accent-color: var(--gold); }
+  border-radius: 3px; background: var(--line); accent-color: var(--accent); }
 progress::-webkit-progress-bar { background: var(--line); border-radius: 3px; }
-progress::-webkit-progress-value { background: var(--gold); border-radius: 3px; }
+progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; }
 
 .foot { display: flex; align-items: center; color: var(--faint); font-size: .76rem;
   padding-top: .85rem; }

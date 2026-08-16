@@ -2,9 +2,10 @@
 """Render the Talaria hero banner (SVG → PNG) with the bundled Chromium.
 
 Produces docs/img/banner.png (1280×320 @2x). Pure local render, no network.
-The wordmark is set in Collapse — the Nous Research brand face — bold, uppercase
-and wide-tracked, exactly as the Hermes Agent hero uses it. Fonts are embedded as
-base64 so the render is self-contained and reproducible.
+Palette: the Hermes desktop "nous"/Psyche identity — deep royal blue with warm
+cream. The wordmark is set in Collapse (the Nous brand face) bold, uppercase and
+wide-tracked, exactly as the Hermes hero uses it. Fonts are embedded as base64 so
+the render is self-contained and reproducible.
 """
 
 from __future__ import annotations
@@ -38,17 +39,17 @@ SVG = """
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0"   stop-color="#07070d"/>
-      <stop offset="0.6" stop-color="#0b0b14"/>
-      <stop offset="1"   stop-color="#0f0f18"/>
+      <stop offset="0"   stop-color="#0d2f86"/>
+      <stop offset="0.55" stop-color="#0b2a78"/>
+      <stop offset="1"   stop-color="#123a92"/>
     </linearGradient>
     <linearGradient id="wing" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffe14d"/>
-      <stop offset="1" stop-color="#e6a700"/>
+      <stop offset="0" stop-color="#ffe6cb"/>
+      <stop offset="1" stop-color="#e6b877"/>
     </linearGradient>
     <radialGradient id="glow" cx="0.5" cy="0.4" r="0.6">
-      <stop offset="0" stop-color="#ffd700" stop-opacity="0.24"/>
-      <stop offset="1" stop-color="#ffd700" stop-opacity="0"/>
+      <stop offset="0" stop-color="#6d9bff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#6d9bff" stop-opacity="0"/>
     </radialGradient>
     <filter id="soft"><feGaussianBlur stdDeviation="0.5"/></filter>
   </defs>
@@ -57,34 +58,34 @@ SVG = """
   <rect width="1280" height="320" fill="url(#glow)"/>
 
   <!-- dotted flight path: old machine -> new machine -->
-  <path d="M 250 236 C 470 236, 520 156, 760 156" stroke="#ffd700" stroke-width="2.25"
-        stroke-dasharray="1.5 11" stroke-linecap="round" fill="none" opacity="0.6"/>
-  <circle cx="250" cy="236" r="5.5" fill="#3a3520"/>
-  <circle cx="760" cy="156" r="5.5" fill="#ffd700"/>
+  <path d="M 250 236 C 470 236, 520 156, 760 156" stroke="#6d9bff" stroke-width="2.25"
+        stroke-dasharray="1.5 11" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <circle cx="250" cy="236" r="5.5" fill="#2a4fa0"/>
+  <circle cx="760" cy="156" r="5.5" fill="#ffe6cb"/>
 
-  <!-- winged sandal glyph (talaria = Hermes' winged sandals) -->
+  <!-- winged sandal glyph (talaria = Hermes' golden winged sandals) -->
   <g transform="translate(120,116)" filter="url(#soft)">
     <path d="M8 74 q40 -14 92 -8 q-6 20 -34 24 q-30 4 -58 -16 z" fill="url(#wing)"/>
     <path d="M18 58 q34 -12 78 -7 q-5 16 -28 20 q-26 4 -50 -13 z" fill="url(#wing)" opacity="0.72"/>
     <path d="M28 44 q28 -9 62 -5 q-4 12 -22 16 q-22 3 -40 -11 z" fill="url(#wing)" opacity="0.46"/>
-    <path d="M30 78 l70 0 l-8 16 l-54 0 z" fill="#efe9d8"/>
-    <path d="M36 94 l50 0 l-4 8 l-42 0 z" fill="#9a968e"/>
+    <path d="M30 78 l70 0 l-8 16 l-54 0 z" fill="#eef3ff"/>
+    <path d="M36 94 l50 0 l-4 8 l-42 0 z" fill="#b5c7f3"/>
   </g>
 
   <text x="300" y="150" font-family="__DISPLAY__" font-size="82" font-weight="700"
-        fill="#f2efe6" letter-spacing="7" textLength="360" lengthAdjust="spacing">TALARIA</text>
+        fill="#ffe6cb" letter-spacing="7" textLength="360" lengthAdjust="spacing">TALARIA</text>
   <text x="302" y="196" font-family="__BODY__"
-        font-size="25" font-weight="500" fill="#ffd700">moves your Hermes agent to a new computer</text>
+        font-size="25" font-weight="500" fill="#8bb0ff">moves your Hermes agent to a new computer</text>
   <text x="302" y="238" font-family="__BODY__"
-        font-size="16" font-weight="400" fill="#9a968e">one file · every platform · verified · undoable</text>
+        font-size="16" font-weight="400" fill="#b5c7f3">one file · every platform · verified · undoable</text>
 
   <!-- machine glyphs -->
   <g opacity="0.95">
-    <rect x="212" y="214" width="70" height="46" rx="5" fill="none" stroke="#3f3b2a" stroke-width="2.25"/>
-    <rect x="236" y="260" width="22" height="7" rx="2" fill="#3f3b2a"/>
-    <rect x="726" y="134" width="70" height="46" rx="5" fill="none" stroke="#ffd700" stroke-width="2.25"/>
-    <rect x="750" y="180" width="22" height="7" rx="2" fill="#e6a700"/>
-    <text x="761" y="163" font-family="__BODY__" font-size="25" fill="#ffd700"
+    <rect x="212" y="214" width="70" height="46" rx="5" fill="none" stroke="#2a4fa0" stroke-width="2.25"/>
+    <rect x="236" y="260" width="22" height="7" rx="2" fill="#2a4fa0"/>
+    <rect x="726" y="134" width="70" height="46" rx="5" fill="none" stroke="#6d9bff" stroke-width="2.25"/>
+    <rect x="750" y="180" width="22" height="7" rx="2" fill="#8bb0ff"/>
+    <text x="761" y="163" font-family="__BODY__" font-size="25" fill="#ffe6cb"
           text-anchor="middle">&#10524;</text>
   </g>
 </svg>
