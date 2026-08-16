@@ -626,14 +626,40 @@ def cmd_apply(args) -> int:
     elif args.conflict == "ask":
         args.conflict = "keep"  # non-interactive default: never clobber silently
 
+    # One unified "Move everything in" consent discloses every gated list (executable
+    # content, files that restore outside HERMES_HOME, and unrecognized files) — D9/D16/
+    # SEC-09: a single yes covers them, matching the GUI's one consent moment. Nothing is
+    # auto-consented silently.
     consent_exec = args.yes
-    if not consent_exec and not args.non_interactive and not args.dry_run:
+    consent_external = args.include_external
+    consent_unrecognized = args.include_unrecognized
+    if not args.yes and not args.non_interactive and not args.dry_run:
+        from talaria.engine.preflight import run_preflight
+
+        with BundleReader(Path(args.bundle)) as peek:
+            peek.verify_structure()
+            pf = run_preflight(peek, home)
+        disclosures = []
+        exec_summary = {k: v for k, v in pf.executable_summary.items() if v}
+        if exec_summary:
+            disclosures.append("  • runs on this machine: " +
+                               ", ".join(f"{v} {k}" for k, v in exec_summary.items()))
+        externals = [g for g in pf.gates if g.id == "PF-18"]
+        if externals:
+            disclosures.append(f"  • {externals[0].detail}")
+        unrec = [g for g in pf.gates if g.id == "PF-17"]
+        if unrec:
+            disclosures.append(f"  • {unrec[0].detail}")
         print("Applying a bundle installs software this machine will run (skills, "
               "scripts, plugins, MCP commands).")
+        for line in disclosures:
+            print(line)
         answer = input("Move everything in? [y/N]: ").strip().lower()
-        consent_exec = answer in ("y", "yes")
-        if not consent_exec:
+        if answer not in ("y", "yes"):
             raise Refusal("TAL-407", "you declined the consent prompt")
+        consent_exec = True
+        consent_external = consent_external or bool(externals)
+        consent_unrecognized = consent_unrecognized or bool(unrec)
 
     # --emit-plan is a look-before-you-leap: build the rewrite plan and write it WITHOUT
     # mutating the target. It implies dry-run so `apply --emit-plan` never applies.
@@ -643,13 +669,13 @@ def cmd_apply(args) -> int:
         conflict_policy=args.conflict if args.conflict != "ask" or ask is None
         else "ask",
         ask=ask, only=tuple(args.only), skip=tuple(args.skip),
-        include_unrecognized=args.include_unrecognized,
+        include_unrecognized=consent_unrecognized or args.dry_run or emit_only,
         accept_url_changes=args.accept_url_changes,
         intent=args.intent, dry_run=args.dry_run or emit_only,
         force_skew=args.force_skew,
         vault_passphrase=passphrase,
         consent_executable=consent_exec or args.dry_run or emit_only,
-        consent_external=args.include_external or args.dry_run or emit_only)
+        consent_external=consent_external or args.dry_run or emit_only)
 
     outcome = apply_bundle(Path(args.bundle), home, options, log)
 

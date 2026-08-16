@@ -44,6 +44,7 @@ class WizardState:
         self.apply_outcome = None
         self.preflight = None
         self.bundle_checklist: list = []
+        self.bundle_vault_present = False
         self.bundle_path: Optional[Path] = None
         self.vault_passphrase: Optional[str] = None
         self.selection_excludes: set = set()
@@ -106,6 +107,7 @@ class WizardState:
             state["preflight"] = self.preflight.to_json()
             state["bundle"] = str(self.bundle_path)
             state["checklist"] = self.bundle_checklist
+            state["vault_present"] = bool(self.bundle_vault_present)
         if self.apply_outcome is not None:
             state["apply"] = self.apply_outcome.to_json()
         return state
@@ -339,6 +341,8 @@ class GuiHandler(BaseHTTPRequestHandler):
                 state.bundle_path = bundle
                 state.bundle_checklist = (reader.manifest.get("checklist") or
                                           {}).get("items", [])
+                state.bundle_vault_present = bool(
+                    (reader.manifest.get("vault") or {}).get("present"))
             return report.to_json()
 
         def apply_job(cancel_flag):

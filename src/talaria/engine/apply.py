@@ -728,7 +728,7 @@ def _do_apply(placements: List[_Placement], target_home: Path, journal: Journal,
                       expected_sha=placement.expected_sha,
                       is_db=bool(placement.is_db),
                       existed=final.exists())
-        final.parent.mkdir(parents=True, exist_ok=True)
+        _mkdir_secure(final.parent, target_home, placement.is_credential)
         if placement.is_db:
             # The pre-apply DB backup is a WAL-folded snapshot (see _backup_one), so the
             # old sidecars' committed data is already preserved and rollback restores a
@@ -749,6 +749,36 @@ def _do_apply(placements: List[_Placement], target_home: Path, journal: Journal,
             pass
         journal.write("op.done", op_id=op_id, kind="replace_file", final=str(final))
         outcome.placed.append(placement.root_rel)
+
+
+def _mkdir_secure(directory: Path, target_home: Path, is_credential: bool) -> None:
+    """Create ``directory`` (and parents), tightening NEW dirs to 0700 on POSIX.
+
+    Directories are created with the process umask by default (typically 0755), which
+    leaves credential trees like ``mcp-tokens/`` and ``pairing/`` group/world-traversable.
+    We chmod every dir we create under HERMES_HOME to 0700 — matching Hermes' own
+    _secure_dir — so restored secrets are never exposed by a loose parent.
+    """
+    directory = Path(directory)
+    if directory.exists():
+        return
+    to_make: List[Path] = []
+    probe = directory
+    home_resolved = Path(target_home).resolve()
+    while not probe.exists():
+        to_make.append(probe)
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    if os.name != "posix":
+        return
+    for made in to_make:
+        if _within(made, home_resolved):
+            try:
+                os.chmod(made, 0o700)
+            except OSError:
+                pass
 
 
 def _place_file(staged: Path, final: Path) -> None:

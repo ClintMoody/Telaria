@@ -84,16 +84,30 @@ def run_preflight(reader: BundleReader, target_home: Path,
     target_home = Path(target_home)
     gates = report.gates
 
-    # PF-01 gateway not running
-    gw_pid = _read_pid(target_home / "gateway.pid")
-    cron_pid = _read_pid(target_home / "cron.pid")
-    running = [("gateway", gw_pid) for _ in [0] if gw_pid and pid_alive(gw_pid)] + \
-              [("cron ticker", cron_pid) for _ in [0] if cron_pid and pid_alive(cron_pid)]
+    # PF-01 gateway not running — check the root home AND every profile home, since a
+    # gateway/ticker can be running for a named profile (its pid files live under
+    # profiles/<name>/) while the root is idle.
+    homes = [target_home]
+    profiles_dir = target_home / "profiles"
+    if profiles_dir.is_dir():
+        for child in sorted(profiles_dir.iterdir()):
+            if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
+                homes.append(child)
+    running = []
+    for phome in homes:
+        label = "" if phome == target_home else f" (profile {phome.name})"
+        gw_pid = _read_pid(phome / "gateway.pid")
+        cron_pid = _read_pid(phome / "cron.pid")
+        if gw_pid and pid_alive(gw_pid):
+            running.append((f"gateway{label}", gw_pid))
+        if cron_pid and pid_alive(cron_pid):
+            running.append((f"cron ticker{label}", cron_pid))
     if running:
         names = " and ".join(n for n, _ in running)
         gates.append(Gate("PF-01", "Hermes must be stopped", "refuse",
                           f"the {names} is running on this machine",
-                          "run `hermes gateway stop`, then apply again"))
+                          "run `hermes gateway stop` (for each running profile), "
+                          "then apply again"))
     else:
         gates.append(Gate("PF-01", "Hermes is stopped", "ok"))
 

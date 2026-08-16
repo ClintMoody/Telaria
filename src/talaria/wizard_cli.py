@@ -194,12 +194,16 @@ def _wizard_apply(bundle: Path, home: Path) -> int:
     args.dry_run = False
     args.progress = None
     args.yes = False
-    args.conflict = "ask"
+    # D8: the wizard is replace-with-safety-copy or cancel — never per-file prompts. The
+    # BACKUP phase is the safety copy; "Undo everything" (talaria rollback) restores it.
+    args.conflict = "overwrite"
     args.only = []
     args.skip = []
     args.intent = "replace"
+    # Let the unified "Move everything in" consent disclose and gate external/unrecognized
+    # writes — not a silent auto-consent (D16/D9).
     args.include_unrecognized = False
-    args.include_external = True
+    args.include_external = False
     args.accept_url_changes = False
     args.force_skew = False
     args.vault_passphrase_file = None

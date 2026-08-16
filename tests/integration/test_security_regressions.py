@@ -360,3 +360,72 @@ class TestHighFindings:
         assert plan_file.exists()
         assert not (target / "SOUL.md").exists()   # NOTHING applied
         assert not (target / ".talaria").exists()
+
+
+class TestMediumFindings:
+    def test_redaction_masks_high_entropy_assignment(self):
+        """Finding: mask_secret_values must catch bare high-entropy KEY= assignments."""
+        from talaria.model.secrets_registry import mask_secret_values
+
+        text = "CUSTOM_API_KEY=8f3a9c2b1d7e4f6a0b5c9d2e1f3a4b6c\nnormal: value"
+        masked = mask_secret_values(text)
+        assert "8f3a9c2b1d7e4f6a0b5c9d2e1f3a4b6c" not in masked
+        assert "•••" in masked
+        assert "normal: value" in masked
+
+    def test_created_credential_dirs_are_0700(self, tmp_path):
+        """Finding: apply must tighten new dirs under HERMES_HOME to 0700 (POSIX)."""
+        import os as _os
+        import stat as _stat
+        import sys as _sys
+
+        if _os.name != "posix":
+            pytest.skip("POSIX-only")
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        result = scan(inst.home)
+        bundle = tmp_path / "b.hermespack"
+        # Vault mode so mcp-tokens/ credential dir gets created on the target.
+        pack(result, bundle, PackOptions(vault_passphrase="pw"))
+        target = tmp_path / "t"
+        apply_bundle(bundle, target, ApplyOptions(vault_passphrase="pw",
+                                                  consent_executable=True))
+        mcp_dir = target / "mcp-tokens"
+        if mcp_dir.is_dir():
+            mode = _stat.S_IMODE(mcp_dir.stat().st_mode)
+            assert mode == 0o700, f"credential dir mode {oct(mode)} (want 0700)"
+
+    def test_skill_provenance_populated(self, tmp_path):
+        """Finding: skill-dir artifacts must carry provenance so the hub-lock couple works."""
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        result = scan(inst.home)
+        skills = {a.id.rsplit("/", 1)[-1]: a for a in result.artifacts
+                  if a.kind == "skill-dir"}
+        assert skills["budget-watch"].provenance.get("skill") == "hub-installed"
+        assert skills["web-search"].provenance.get("skill") == "stock-pristine"
+        assert skills["playlist-curator"].provenance.get("skill") == "agent-created"
+
+    def test_hub_lock_couple_now_enforced(self, tmp_path):
+        """With provenance populated, skipping hub metadata while keeping a hub skill fails."""
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        result = scan(inst.home)
+        bundle = tmp_path / "b.hermespack"
+        pack(result, bundle, PackOptions())
+        target = tmp_path / "t"
+        with pytest.raises(Refusal) as exc_info:
+            apply_bundle(bundle, target,
+                         ApplyOptions(consent_executable=True, skip=("hub-metadata@",)))
+        assert exc_info.value.code == "TAL-208"
+        assert "hub-lock" in str(exc_info.value.message)

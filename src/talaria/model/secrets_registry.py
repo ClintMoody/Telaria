@@ -118,6 +118,17 @@ def mask_secret_values(text: str) -> str:
         out = pattern.sub("•••", out)
     out = re.sub(r"([?&](?:token|key|secret|password|auth)=)[^&\s\"']+", r"\1•••", out,
                  flags=re.I)
+    # High-entropy KEY=/TOKEN=/SECRET=/PASSWORD= assignments — the same shape
+    # scan_text_for_secrets flags. Masking the patterns above misses a bare
+    # `MY_KEY=8f3a9c2b1d...`, which would otherwise survive into a report verbatim.
+    def _mask_assign(m):
+        whole, value = m.group(0), m.group(2)
+        if _entropy(value) < 3.5:
+            return whole
+        cut = m.start(2) - m.start(0)
+        return whole[:cut] + "•••"
+
+    out = _HIGH_ENTROPY_ASSIGN.sub(_mask_assign, out)
     return out
 
 

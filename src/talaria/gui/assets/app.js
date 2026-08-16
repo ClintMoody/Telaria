@@ -360,11 +360,23 @@ function screenApplyT2() {
     }
   }
   const blocked = groups.refuse.length > 0;
+  const hasUnrecognized = pf.gates.some((g) => g.id === "PF-17");
+  const vaultPass = el("input", { type: "password",
+    placeholder: "vault passphrase (leave blank to keep keys on the checklist)" });
+  const vaultRow = state.vault_present
+    ? el("div", { class: "card" },
+        el("h2", {}, "This bundle has a locked vault"),
+        el("p", { class: "muted small" },
+          "Enter the passphrase to restore the encrypted keys, or leave it blank and ",
+          "paste keys from the checklist instead."),
+        el("div", { class: "paste" }, vaultPass))
+    : null;
   render(el("div", {},
     el("div", { class: "card" },
       el("div", { class: "step-label" }, "Step 2 of 4 · Preflight"),
       el("h1", {}, blocked ? "Not yet — fix the blockers first" : "This machine is ready"),
       ...sections),
+    vaultRow,
     el("div", { class: "card" },
       el("h2", {}, "Ready when you are"),
       el("p", { class: "muted small" },
@@ -373,13 +385,18 @@ function screenApplyT2() {
         "copy is made first; one click undoes everything."),
       el("div", { class: "btn-row" },
         el("button", { class: "btn primary big", disabled: blocked ? "" : null,
-          onclick: () => {
+          onclick: async () => {
+            if (state.vault_present && vaultPass.value) {
+              await api("/api/vault-passphrase", { method: "POST",
+                body: JSON.stringify({ passphrase: vaultPass.value }) });
+            }
             setPromise("A safety copy is made before anything changes — undo any time.");
             render(el("div", { class: "card center" },
               el("h1", {}, "Moving your Hermes in…"),
               el("p", { class: "muted" },
                 "ready → safety copy → moving in → making it at home → double-checking")));
-            runJob("apply", { consent: true }, screenApplyT4);
+            runJob("apply", { consent: true, include_unrecognized: hasUnrecognized },
+                   screenApplyT4);
           } }, "Move everything in"),
         blocked ? el("span", { class: "muted small" }, "resolve the ✗ items, then re-run") : null))));
 }

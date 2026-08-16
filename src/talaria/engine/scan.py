@@ -97,6 +97,8 @@ def scan(home: Path, on_item: Optional[Callable[[str], None]] = None,
 
     result.artifacts = sorted(groups.values(), key=lambda a: (a.profile, a.family, a.id))
 
+    _attach_skill_provenance(root, result)
+
     for profile, phome in profile_homes(root).items():
         _chase_references(phome, profile, result)
 
@@ -194,6 +196,38 @@ def _record_file(entry, rel_parts: Tuple[str, ...], profile: str,
 
 
 # --------------------------------------------------------------------------- etiquette
+
+def _attach_skill_provenance(root: Path, result: ScanResult) -> None:
+    """Tag each skill-dir artifact with its provenance so the report shows it and the
+    hub-lock coupling rule can fire (it keys on provenance['skill'] == 'hub-installed').
+    """
+    from talaria.engine.provenance import HashSemantics, classify_skills
+
+    semantics = HashSemantics.for_os(result.identity.os_name)
+    for profile, phome in profile_homes(root).items():
+        skills_dir = phome / "skills"
+        if not skills_dir.is_dir():
+            continue
+        try:
+            provenances = {p.directory: p for p in classify_skills(skills_dir, semantics)}
+        except Exception:
+            continue
+        for art in result.artifacts:
+            if art.kind != "skill-dir" or art.profile != profile:
+                continue
+            # art group files share the prefix skills/<cat>/<skill>; recover the
+            # skills-root-relative directory to match the provenance key.
+            if not art.files:
+                continue
+            parts = art.files[0].home_rel.split("/")
+            if len(parts) >= 3 and parts[0] == "skills":
+                rel = "/".join(parts[1:3])
+                prov = provenances.get(rel)
+                if prov is not None:
+                    art.provenance["skill"] = prov.tag
+                    if prov.usage.get("created_by"):
+                        art.provenance["created_by"] = prov.usage["created_by"]
+
 
 def _live_install_etiquette(root: Path, result: ScanResult) -> None:
     """R-SCAN-09: read-only checks for live-install hazards."""
