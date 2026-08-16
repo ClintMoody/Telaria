@@ -64,14 +64,32 @@ def resolve_root_and_profile(home: Path) -> Tuple[Path, Optional[str]]:
 
 
 def profile_homes(root: Path) -> Dict[str, Path]:
-    """All state homes: {"": root, "<name>": root/profiles/<name>} (R-SCAN-02)."""
+    """All state homes: {"": root, "<name>": root/profiles/<name>} (R-SCAN-02).
+
+    Symlinked profile directories are skipped — following them would pack whatever the
+    link points at (outside HERMES_HOME), violating the never-follow-symlinks rule
+    (R-SCAN-05). Skipped profiles are recorded in ``profile_homes.skipped`` for the caller.
+    """
     homes: Dict[str, Path] = {"": Path(root)}
     profiles_dir = Path(root) / "profiles"
     if profiles_dir.is_dir():
         for child in sorted(profiles_dir.iterdir()):
-            if child.is_dir() and not child.name.startswith("."):
+            if child.name.startswith("."):
+                continue
+            if child.is_symlink():
+                continue  # never follow — would pack the link's target (R-SCAN-05)
+            if child.is_dir():
                 homes[child.name] = child
     return homes
+
+
+def symlinked_profiles(root: Path) -> List[str]:
+    """Names of profile entries that are symlinks (skipped by profile_homes)."""
+    profiles_dir = Path(root) / "profiles"
+    if not profiles_dir.is_dir():
+        return []
+    return [c.name for c in sorted(profiles_dir.iterdir())
+            if c.is_symlink() and not c.name.startswith(".")]
 
 
 def looks_like_hermes_home(path: Path) -> bool:

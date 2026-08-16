@@ -205,7 +205,7 @@ def apply_bundle(bundle_path: Path, target_home: Path,
 
         # Selection narrowing validates BEFORE the transaction exists: a refusal here
         # must propagate as exit 3 (nothing modified), never enter the rollback path.
-        selected_ids = _selected_artifact_ids(manifest, options)
+        selected_ids = _selected_artifact_ids(manifest, options, reader)
 
         if options.dry_run:
             outcome.status = "dry_run"
@@ -261,6 +261,7 @@ def apply_bundle(bundle_path: Path, target_home: Path,
 
         try:
             _do_apply(placements, target_home, journal, log, outcome)
+            _rebaseline_placed(manifest, placements, target_home, journal, outcome)
             _sweep_stale(target_home, backup_dir, journal, outcome)
             _verify_gating(placements, target_home, journal, log)
             journal.write("commit")
@@ -391,14 +392,14 @@ def _stage(reader: BundleReader, manifest: dict, plan: RewritePlan, stage_dir: P
     _stage_vault(reader, manifest, stage_dir, target_home, options, placements, outcome)
     _apply_rewrites(plan, placements, stage_dir, options, journal, outcome)
     _scrub_cron(placements, journal, outcome)
-    _rebaseline_cross_os(manifest, placements, journal, outcome)
     for placement in placements:
         placement.expected_sha = file_sha256(placement.staged)
     _resolve_conflicts(placements, options, outcome)
     return placements
 
 
-def _selected_artifact_ids(manifest: dict, options: ApplyOptions) -> Set[str]:
+def _selected_artifact_ids(manifest: dict, options: ApplyOptions,
+                           reader: Optional[BundleReader] = None) -> Set[str]:
     from talaria.model.artifact import Artifact
 
     artifacts = []
@@ -407,6 +408,7 @@ def _selected_artifact_ids(manifest: dict, options: ApplyOptions) -> Set[str]:
                        family=record.get("family", ""),
                        profile=record.get("profile", ""),
                        default=record.get("default", "on"),
+                       provenance=record.get("provenance", {}) or {},
                        selected=record.get("selected", True) and
                        bool(record.get("files")))
         artifacts.append(art)
@@ -417,13 +419,44 @@ def _selected_artifact_ids(manifest: dict, options: ApplyOptions) -> Set[str]:
     if options.only or options.skip:
         from talaria.model.selection import validate_couples
 
-        cron_jobs: Dict[str, list] = {}
-        violations = validate_couples(artifacts, cron_jobs, {})
+        # The coupling engine needs the actual cron jobs + config to tell whether a job
+        # has a script / context_from / monitor etc. Load them from the bundle payload so
+        # narrowing that would strand a dependent unit (e.g. --skip scripts-dir while
+        # keeping a job that runs a script) is refused, not silently applied broken.
+        cron_jobs, config = _load_couple_context(reader, manifest)
+        violations = validate_couples(artifacts, cron_jobs, config)
         if violations:
             raise Refusal("TAL-208",
                           "narrowing breaks hard couples: " +
-                          ", ".join(v.couple_id for v in violations))
+                          "; ".join(f"{v.couple_id} ({v.message})" for v in violations))
     return {a.id for a in artifacts if a.selected}
+
+
+def _load_couple_context(reader: Optional[BundleReader], manifest: dict
+                         ) -> Tuple[Dict[str, list], Dict[str, dict]]:
+    """Read cron jobs.json and config.yaml per profile from the bundle for couple checks."""
+    cron_jobs: Dict[str, list] = {}
+    config: Dict[str, dict] = {}
+    if reader is None or reader.zf is None:
+        return cron_jobs, config
+    from talaria.engine import yamlmini
+
+    profiles = manifest.get("profiles", [""]) or [""]
+    for profile in profiles:
+        base = PAYLOAD_HOME + (f"profiles/{profile}/" if profile else "")
+        try:
+            raw = reader.zf.read(base + "cron/jobs.json")
+            data = json.loads(raw.decode("utf-8-sig"))
+            jobs = data.get("jobs", [])
+            cron_jobs[profile] = jobs if isinstance(jobs, list) else []
+        except (KeyError, ValueError):
+            pass
+        try:
+            raw = reader.zf.read(base + "config.yaml")
+            config[profile] = yamlmini.parse(raw.decode("utf-8-sig", errors="replace"))
+        except (KeyError, ValueError):
+            pass
+    return cron_jobs, config
 
 
 def _stage_vault(reader: BundleReader, manifest: dict, stage_dir: Path,
@@ -552,27 +585,52 @@ def _scrub_cron(placements: List[_Placement], journal: Journal,
                 pass
 
 
-def _rebaseline_cross_os(manifest: dict, placements: List[_Placement],
-                         journal: Journal, outcome: ApplyOutcome) -> None:
-    """D14: rebaseline stock-pristine .bundled_manifest hashes under target semantics."""
+def _rebaseline_placed(manifest: dict, placements: List[_Placement], target_home: Path,
+                       journal: Journal, outcome: ApplyOutcome) -> None:
+    """D14/R-DIFF-02: after placement, recompute stock-pristine `.bundled_manifest`
+    hashes under the TARGET OS's separator/collation semantics.
+
+    Runs post-_do_apply on the real placed skills trees (staging uses ordinal names, so
+    the tree can't be reconstructed there). Without this, every stock skill's seed-time
+    hash was computed under the source OS's semantics and would never match on the target
+    — freezing all upstream skill updates (`hermes skills list-modified` would report the
+    whole stock set as modified). The matching placement's expected hash is updated so
+    the gating verify still passes.
+    """
     source_sem = (manifest.get("hash_semantics") or
                   (manifest.get("source") or {}).get("hash_semantics") or {})
     target_os = "windows" if os.name == "nt" else "posix"
     source_sep = source_sem.get("separator", "posix")
     if source_sep == ("nt" if target_os == "windows" else "posix"):
         return  # same semantics — nothing to rebaseline
-    prov_meta = None
-    for placement in placements:
-        if placement.root_rel.endswith("skills/.bundled_manifest"):
-            prov_meta = placement
-            break
-    if prov_meta is None:
-        return
-    # Reconstruct per-skill staged trees is impractical here; rebaseline runs post-apply
-    # via verify (documented) when semantics differ. Record the intent for the report.
-    outcome.scrubs.append({"file": prov_meta.root_rel,
-                           "reason": "cross-OS apply: stock-pristine hashes will be "
-                                     "rebaselined after placement (target semantics)"})
+    source_semantics = HashSemantics(separator=source_sep,
+                                     collation=source_sem.get("collation", "posix"))
+    target_semantics = HashSemantics.for_os("windows" if target_os == "windows"
+                                            else "linux")
+
+    manifest_placements = {p.root_rel: p for p in placements
+                           if p.root_rel.endswith("skills/.bundled_manifest")}
+    for root_rel, placement in manifest_placements.items():
+        skills_dir = placement.final.parent
+        if not skills_dir.is_dir():
+            continue
+        provenances = classify_skills(skills_dir, source_semantics)
+        current = read_bundled_manifest(skills_dir)
+        rebased = rebaseline_manifest(current, provenances, skills_dir, target_semantics)
+        if rebased == current:
+            continue
+        # Rollback of this file is already covered by its placement backup (the pre-apply
+        # target state), so no extra backup is needed — just record the modification.
+        journal.write("op.done", op_id=f"rb-{root_rel[:20]}", kind="rebaseline",
+                      final=str(placement.final))
+        write_bundled_manifest(skills_dir, rebased)
+        placement.expected_sha = file_sha256(placement.final)  # keep verify happy
+        pristine = sum(1 for p in provenances if p.tag == "stock-pristine")
+        outcome.scrubs.append({
+            "file": root_rel,
+            "reason": f"cross-OS apply: rebaselined {pristine} stock-pristine skill "
+                      "hash(es) to this machine's semantics so upstream updates keep "
+                      "working"})
 
 
 def _resolve_conflicts(placements: List[_Placement], options: ApplyOptions,

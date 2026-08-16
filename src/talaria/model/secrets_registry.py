@@ -125,11 +125,19 @@ def is_never_path(path: str, home: str) -> Optional[str]:
     """Why ``path`` is refused by the never-registry (None = allowed).
 
     ``path`` may be absolute or ~-relative; ``home`` is the user's home directory.
+    The path is NORMALIZED before every check so ``~/../.ssh`` or ``~/foo/../../.ssh``
+    cannot slip past the home-prefix and protected-prefix gates by walking up with
+    ``..`` (the naive ``~``→home substitution left that hole open).
     """
-    expanded = path.replace("~", home.rstrip("/")) if path.startswith("~") else path
-    norm = expanded.replace("\\", "/")
-    home_norm = home.rstrip("/").replace("\\", "/")
-    if not norm.startswith(home_norm + "/") and norm != home_norm:
+    import os as _os
+
+    if path.startswith("~"):
+        expanded = home.rstrip("/\\") + path[1:]
+    else:
+        expanded = path
+    norm = _os.path.normpath(expanded).replace("\\", "/")
+    home_norm = _os.path.normpath(home).replace("\\", "/").rstrip("/")
+    if norm != home_norm and not norm.startswith(home_norm + "/"):
         return "outside the home directory"
     rel = "~" + norm[len(home_norm):]
     for prefix in NEVER_REGISTRY_PREFIXES:

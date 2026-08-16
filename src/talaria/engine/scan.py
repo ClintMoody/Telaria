@@ -21,6 +21,7 @@ from talaria.engine.resolve import (
     detect_identity,
     profile_homes,
     resolve_root_and_profile,
+    symlinked_profiles,
 )
 from talaria.engine.sqlite_snap import is_sqlite_file
 from talaria.model.artifact import Artifact, Dependency, FileEntry, Touchpoint, artifact_id
@@ -82,6 +83,11 @@ def scan(home: Path, on_item: Optional[Callable[[str], None]] = None,
     result = ScanResult(identity=identity, artifacts=[], touchpoints=[], machine_refs=[])
 
     _live_install_etiquette(root, result)
+
+    for name in symlinked_profiles(root):
+        result.warnings.append(
+            f"profile {name!r} is a symlink — skipped (its target is not followed or "
+            "packed; recreate it on the new machine)")
 
     groups: Dict[Tuple[str, str, str], Artifact] = {}
     for profile, phome in profile_homes(root).items():
@@ -351,14 +357,19 @@ def _chase_jobs(jobs: list, phome: Path, profile: str, result: ScanResult) -> No
         if not isinstance(job, dict):
             continue
         jid = str(job.get("id", "?"))
-        script = job.get("script") or job.get("monitor_script")
-        if isinstance(script, str) and script:
-            kind = "script"
-            locator = f"jobs[id={jid}].script"
-            result.machine_refs.append(MachineRef(profile, "cron/jobs.json", "json",
-                                                  locator, script, kind))
-            script_path = script if os.path.isabs(script) else str(phome / "scripts" / script)
-            _touch(result, phome, script_path, "cron-ref", "job script")
+        # script and monitor_script are DISTINCT fields — recording monitor_script under
+        # the `.script` locator would make the rewriter inject a bogus `script` value
+        # into a monitor job (materializing a field it never had). Emit each under its
+        # own locator so the rewrite lands on the field it came from.
+        for field_name in ("script", "monitor_script"):
+            script = job.get(field_name)
+            if isinstance(script, str) and script:
+                result.machine_refs.append(MachineRef(
+                    profile, "cron/jobs.json", "json",
+                    f"jobs[id={jid}].{field_name}", script, "script"))
+                script_path = script if os.path.isabs(script) \
+                    else str(phome / "scripts" / script)
+                _touch(result, phome, script_path, "cron-ref", f"job {field_name}")
         workdir = job.get("workdir")
         if isinstance(workdir, str) and workdir:
             result.machine_refs.append(MachineRef(profile, "cron/jobs.json", "json",

@@ -254,3 +254,109 @@ class TestVaultArbitraryWrite:
         assert outcome.status == "committed"
         assert (target / ".env").exists()  # credentials restored from the vault
         assert "OPENROUTER_API_KEY" in (target / ".env").read_text()
+
+
+class TestHighFindings:
+    def test_never_path_traversal_closed(self):
+        """Finding #7: ~/.. must not escape the home + never-registry gate."""
+        from talaria.model.secrets_registry import is_never_path
+
+        home = "/home/alice"
+        # Direct protected paths still caught.
+        assert is_never_path("~/.ssh/id_ed25519", home)
+        # The bypass: walking up out of home, or back into a protected dir via ..
+        assert is_never_path("~/../../etc/shadow", home)
+        assert is_never_path("~/foo/../.ssh/authorized_keys", home)
+        assert is_never_path("~/../bob/.ssh/key", home)
+        # Legit in-home paths still allowed.
+        assert is_never_path("~/projects/site", home) is None
+        assert is_never_path("~/.honcho/state.json", home) is None
+
+    def test_monitor_script_distinct_locator(self, tmp_path):
+        """Finding #8: monitor_script recorded under its own locator, not .script."""
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        # Add a monitor_script-only job.
+        jobs_file = inst.home / "cron" / "jobs.json"
+        data = json.loads(jobs_file.read_text())
+        data["jobs"].append({
+            "id": "monitorjob01", "name": "mon", "prompt": "",
+            "monitor_script": "/abs/watch.sh", "no_agent": True,
+            "schedule": {"kind": "interval", "minutes": 10},
+            "enabled": True, "state": "scheduled",
+            "repeat": {"times": None, "completed": 0}})
+        jobs_file.write_text(json.dumps(data))
+        result = scan(inst.home)
+        locs = {r.locator for r in result.machine_refs}
+        assert "jobs[id=monitorjob01].monitor_script" in locs
+        # It must NOT have created a bogus .script locator for the monitor job.
+        assert "jobs[id=monitorjob01].script" not in locs
+
+    def test_symlinked_profile_skipped(self, tmp_path):
+        """Finding #10: a symlinked profile dir is not followed/packed."""
+        import os as _os
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        outside = tmp_path / "outside-secret"
+        outside.mkdir()
+        (outside / "loot.txt").write_text("should never be packed")
+        profiles = inst.home / "profiles"
+        profiles.mkdir(exist_ok=True)
+        try:
+            _os.symlink(outside, profiles / "evil")
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        result = scan(inst.home)
+        all_files = [f.home_rel for a in result.artifacts for f in a.files]
+        assert not any("loot.txt" in f for f in all_files)
+        assert any("symlink" in w and "evil" in w for w in result.warnings)
+
+    def test_apply_narrowing_enforces_couples(self, tmp_path):
+        """Finding: --skip scripts-dir while keeping a job with a script is refused."""
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        result = scan(inst.home)
+        bundle = tmp_path / "b.hermespack"
+        pack(result, bundle, PackOptions())
+        target = tmp_path / "t"
+        with pytest.raises(Refusal) as exc_info:
+            apply_bundle(bundle, target,
+                         ApplyOptions(consent_executable=True, skip=("scripts-dir@",)))
+        assert exc_info.value.code == "TAL-208"
+        assert "job-script" in str(exc_info.value.message)
+        assert not (target / "SOUL.md").exists()  # refused before any write
+
+    def test_emit_plan_does_not_apply(self, tmp_path):
+        """Finding #11: apply --emit-plan writes the plan and applies NOTHING."""
+        import sys as _sys
+
+        from talaria.cli import main
+
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+        from hermes_factory import FakeInstallSpec, build_fake_install
+
+        inst = build_fake_install(tmp_path / "h", FakeInstallSpec())
+        result = scan(inst.home)
+        bundle = tmp_path / "b.hermespack"
+        pack(result, bundle, PackOptions())
+        target = tmp_path / "t"
+        plan_file = tmp_path / "plan.json"
+        code = main(["apply", str(bundle), "--home", str(target),
+                     "--emit-plan", str(plan_file), "--yes", "--non-interactive",
+                     "--quiet"])
+        assert code == 0
+        assert plan_file.exists()
+        assert not (target / "SOUL.md").exists()   # NOTHING applied
+        assert not (target / ".talaria").exists()

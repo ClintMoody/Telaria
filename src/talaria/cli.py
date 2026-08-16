@@ -635,22 +635,32 @@ def cmd_apply(args) -> int:
         if not consent_exec:
             raise Refusal("TAL-407", "you declined the consent prompt")
 
+    # --emit-plan is a look-before-you-leap: build the rewrite plan and write it WITHOUT
+    # mutating the target. It implies dry-run so `apply --emit-plan` never applies.
+    emit_only = bool(args.emit_plan)
+
     options = ApplyOptions(
         conflict_policy=args.conflict if args.conflict != "ask" or ask is None
         else "ask",
         ask=ask, only=tuple(args.only), skip=tuple(args.skip),
         include_unrecognized=args.include_unrecognized,
         accept_url_changes=args.accept_url_changes,
-        intent=args.intent, dry_run=args.dry_run, force_skew=args.force_skew,
+        intent=args.intent, dry_run=args.dry_run or emit_only,
+        force_skew=args.force_skew,
         vault_passphrase=passphrase,
-        consent_executable=consent_exec or args.dry_run,
-        consent_external=args.include_external or args.dry_run)
+        consent_executable=consent_exec or args.dry_run or emit_only,
+        consent_external=args.include_external or args.dry_run or emit_only)
 
     outcome = apply_bundle(Path(args.bundle), home, options, log)
 
     if args.emit_plan and outcome.plan is not None:
         Path(args.emit_plan).write_text(
             json.dumps(outcome.plan.to_json(), indent=1), encoding="utf-8")
+        if emit_only:
+            return _emit(args, {"emitted_plan": args.emit_plan,
+                                "entries": len(outcome.plan.entries)},
+                         f"✓ rewrite plan written to {args.emit_plan} "
+                         f"({len(outcome.plan.entries)} entries); nothing was applied")
 
     with BundleReader(Path(args.bundle)) as reader:
         manifest = reader.manifest
