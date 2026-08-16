@@ -383,7 +383,8 @@ def _write_zip(scan_result: ScanResult, plan: _Plan, options: PackOptions,
             "counts": {"files": sum(len(v) for v in artifact_files.values()),
                        "artifacts": len(artifact_files)},
             "bytes": {"payload": done_bytes},
-            "artifacts": _manifest_artifacts(scan_result, artifact_files),
+            "artifacts": _manifest_artifacts(scan_result, artifact_files,
+                                             plan.external_entries),
             "selection": options.selection.to_json(),
             "rewrite_anchors": {
                 "source_home": str(Path.home()),
@@ -443,13 +444,29 @@ def _write_meta(zf: zipfile.ZipFile, scan_result: ScanResult,
 
 
 def _manifest_artifacts(scan_result: ScanResult,
-                        artifact_files: Dict[str, List[dict]]) -> List[dict]:
+                        artifact_files: Dict[str, List[dict]],
+                        external_entries: Optional[List["_PlanEntry"]] = None
+                        ) -> List[dict]:
     out = []
     for art in scan_result.artifacts:
         record = art.to_json()
         record["files"] = artifact_files.get(art.id, [])
         if not art.travels:
             record["files"] = []   # recorded, not carried
+        out.append(record)
+    # External (memory-provider) state lives under synthetic artifacts that are NOT in
+    # scan_result.artifacts — without emitting their records here, their payload members
+    # are absent from the manifest and every such bundle is rejected as
+    # "zip member not in manifest" on apply (D16 / R-APPLY-13 dead). Emit one record per
+    # distinct synthetic external artifact.
+    seen: Set[str] = set()
+    for entry in external_entries or []:
+        art = entry.artifact
+        if art.id in seen:
+            continue
+        seen.add(art.id)
+        record = art.to_json()
+        record["files"] = artifact_files.get(art.id, [])
         out.append(record)
     return out
 

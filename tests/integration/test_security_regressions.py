@@ -7,6 +7,7 @@ now closed. These are the tests the original 267-test suite was missing.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import zipfile
 from pathlib import Path
@@ -59,6 +60,57 @@ def _forge_vault_bundle(tmp_path: Path, hostile_root_rel: str) -> Path:
                        "created_by_tool_version", "created_at", "source")}))
         zout.writestr(MANIFEST_NAME, json.dumps(manifest))
     return hostile
+
+
+class TestExternalStateBundle:
+    """Finding #2/#4: memory-provider external state must not make bundles unappliable."""
+
+    def _install_with_external(self, tmp_path, fake_home):
+        import os
+
+        os.environ["HOME"] = str(fake_home)
+        fake_home.mkdir(parents=True, exist_ok=True)
+        honcho = fake_home / ".honcho"
+        honcho.mkdir()
+        (honcho / "state.json").write_text('{"session": "abc"}')
+        inst = build_fake_install(fake_home / ".hermes", FakeInstallSpec())
+        # Point the config at the honcho memory provider.
+        cfg = (inst.home / "config.yaml").read_text()
+        cfg = cfg.replace("memory:\n  memory_enabled: true\n  provider: null",
+                          "memory:\n  memory_enabled: true\n  provider: honcho")
+        (inst.home / "config.yaml").write_text(cfg)
+        return inst
+
+    def test_external_bundle_is_valid_and_applies(self, tmp_path, monkeypatch):
+        real_home = os.environ.get("HOME")
+        try:
+            fake_home = tmp_path / "userhome"
+            inst = self._install_with_external(tmp_path, fake_home)
+            result = scan(inst.home)
+            # The external dir must have been discovered as a machine ref.
+            assert any(r.ref_kind == "external-dir" and "honcho" in r.value
+                       for r in result.machine_refs)
+            bundle = tmp_path / "ext.hermespack"
+            pres = pack(result, bundle, PackOptions())
+            # The external member is now IN the manifest (was the bug).
+            ext_arts = [a for a in pres.manifest["artifacts"]
+                        if a["kind"] == "external-state" and a["files"]]
+            assert ext_arts, "external-state artifact missing from manifest"
+
+            # verify_structure must pass (previously: 'zip member not in manifest').
+            with BundleReader(bundle) as reader:
+                assert reader.verify_structure() == []
+
+            # Apply lands the external file under the (fake) home, with consent.
+            target_home = fake_home / ".hermes-target"
+            outcome = apply_bundle(bundle, target_home,
+                                   ApplyOptions(consent_executable=True,
+                                                consent_external=True))
+            assert outcome.status == "committed"
+            assert (fake_home / ".honcho" / "state.json").exists()
+        finally:
+            if real_home:
+                os.environ["HOME"] = real_home
 
 
 class TestVaultArbitraryWrite:
