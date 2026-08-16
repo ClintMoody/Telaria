@@ -31,7 +31,11 @@ undoable `.hermespack` file.
 - Interfaces: 15-subcommand CLI (--json everywhere, D3 exit codes, dry-run), text
   wizard within a 2-decision budget, hardened localhost GUI wizard (token bootstrap,
   Host/Origin checks, job engine, paste-back).
-- Distribution: pip package + 141 KiB single-file `talaria.pyz` (Python 3.9 floor,
+- Distribution: pip package + single-file `talaria.pyz` (Python 3.9 floor,
   2.7-parseable stub).
-- 260+ tests: unit, integration round-trips, crash-injection rollback, hostile
-  bundles, GUI endpoint security, real-browser walkthrough.
+- 269 tests: unit, integration round-trips, crash-injection rollback, hostile
+  bundles, GUI endpoint security, real-browser walkthrough, adversarial regressions.
+- Hardened by an adversarial security review (docs/security-review.md): 11 confirmed
+  findings fixed, including a vault-member arbitrary-write (RCE), memory-provider
+  bundles that were unappliable, and a rollback path that could lose committed
+  database WAL data — each with a reproducing regression test.

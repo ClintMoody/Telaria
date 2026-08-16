@@ -120,7 +120,7 @@ requirement our test suite enforces:
 | Apply | extract over the live install | transactional, journaled, auto-rollback |
 | Zip-slip guard | broken prefix check | full hardening (traversal, symlinks, collisions, bombs) |
 | Verification | none | per-file hashes + health checks + reports |
-| Tests | none | 260+ (unit, integration, crash-injection, GUI, browser) |
+| Tests | none | 269 (unit, integration, crash-injection, GUI, browser, adversarial) |
 
 ## The details, if you want them
 
