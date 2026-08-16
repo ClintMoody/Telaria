@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talaria — moves your Hermes agent to a new computer</title>
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='24' font-size='24'%3E%E2%A4%9E%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<main id="app">
+  <header class="masthead">
+    <div class="brand"><span class="wing">⤞</span> <b>Talaria</b>
+      <span class="tag">moves your Hermes agent to a new computer</span></div>
+    <div class="promises" id="promise-strip">Nothing on this computer is changed or deleted.</div>
+  </header>
+
+  <section id="screen" class="screen" aria-live="polite">
+    <div class="card center" id="boot-card">
+      <h1>Connecting…</h1>
+      <p class="muted">If this page stays here, reopen the exact link the terminal printed.</p>
+    </div>
+  </section>
+
+  <section id="log-strip" class="log-strip" hidden>
+    <div id="log-line" class="log-line"></div>
+    <progress id="log-progress" max="100" value="0" hidden></progress>
+  </section>
+
+  <footer class="foot">
+    <span id="foot-version"></span>
+    <span class="spacer"></span>
+    <button class="linkish" id="btn-quit">Close wizard</button>
+  </footer>
+</main>
+<script src="/assets/app.js"></script>
+</body>
+</html>
