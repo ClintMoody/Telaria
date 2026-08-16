@@ -49,6 +49,7 @@ from talaria.events import EventLog
 from talaria.hashes import file_sha256
 from talaria.model.catalog import exclusion_for
 from talaria.model.secrets_registry import is_credential_path, is_never_path
+from talaria.platform.paths import member_name_problems
 from talaria.model.selection import narrow_selection
 
 TXN_DIRNAME = ".talaria"
@@ -233,10 +234,27 @@ def apply_bundle(bundle_path: Path, target_home: Path,
         journal.write("state", state="INIT", bundle=str(bundle_path),
                       bundle_id=manifest.get("bundle_id"), intent=options.intent)
 
+        # STAGE and BACKUP touch only the transaction area, never the target's real
+        # files — the first target mutation is _do_apply. A failure before that point
+        # (wrong vault passphrase, hostile vault path, coupling violation, extraction
+        # error) is a clean refusal: nothing was modified, so it must NOT roll back
+        # (which would exit 5 and imply the target was touched). We tear down the txn
+        # and re-raise. Only once mutation begins does the rollback path apply.
         try:
             placements = _stage(reader, manifest, plan, stage_dir, target_home,
                                 options, journal, log, outcome, selected_ids)
             _backup(placements, target_home, backup_dir, journal, log)
+        except BaseException as stage_exc:
+            journal.close()
+            shutil.rmtree(txn_dir, ignore_errors=True)
+            _prune_empty_txn_root(target_home)
+            if isinstance(stage_exc, (Refusal, TalariaError)):
+                raise
+            raise TalariaError("TAL-501",
+                               f"apply could not be prepared: {stage_exc}",
+                               exit_code=EXIT_ROLLED_BACK) from stage_exc
+
+        try:
             _do_apply(placements, target_home, journal, log, outcome)
             _sweep_stale(target_home, backup_dir, journal, outcome)
             _verify_gating(placements, target_home, journal, log)
@@ -421,6 +439,17 @@ def _stage_vault(reader: BundleReader, manifest: dict, stage_dir: Path,
     for seq, record in enumerate(vr.members()):
         profile = record.get("profile", "")
         root_rel = record.get("root_rel") or record["home_rel"]
+        # A vault member's destination is manifest-declared and the passphrase-holder
+        # may be a hostile bundle author (they own+share it) — so root_rel is UNTRUSTED
+        # and must clear the same containment the payload path enforces, or it writes
+        # anywhere on disk (arbitrary-write → RCE). It never escapes HERMES_HOME.
+        problems = member_name_problems("payload/home/" + root_rel)
+        final = (target_home / root_rel).resolve()
+        if problems or not _within(final, target_home):
+            raise Refusal("TAL-303",
+                          f"vault member declares an unsafe destination {root_rel!r} — "
+                          "refusing before any write",
+                          detail={"root_rel": root_rel, "problems": problems})
         staged = stage_dir / f"vault-{seq:06d}"
         vr.decrypt_member(reader.zf, record, staged)
         placements.append(_Placement(
@@ -428,6 +457,30 @@ def _stage_vault(reader: BundleReader, manifest: dict, stage_dir: Path,
             root_rel=root_rel, expected_sha=record.get("plain_sha256", ""),
             mode=record.get("mode", 0o600), is_credential=True,
             is_db=root_rel.endswith(".db")))
+
+
+def _within(child: Path, root: Path) -> bool:
+    """True when the resolved ``child`` is ``root`` or strictly inside it."""
+    try:
+        child.resolve().relative_to(Path(root).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _prune_empty_txn_root(target_home: Path) -> None:
+    """Remove the .talaria txn scaffolding when a refused apply left it empty."""
+    txn_root = Path(target_home) / TXN_DIRNAME / "txn"
+    try:
+        if txn_root.is_dir() and not any(txn_root.iterdir()):
+            txn_root.rmdir()
+        talaria_dir = Path(target_home) / TXN_DIRNAME
+        remaining = {p.name for p in talaria_dir.iterdir()} if talaria_dir.is_dir() \
+            else set()
+        if remaining <= {"README"}:
+            shutil.rmtree(talaria_dir, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def _apply_rewrites(plan: RewritePlan, placements: List[_Placement], stage_dir: Path,

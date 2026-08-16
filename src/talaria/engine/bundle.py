@@ -241,6 +241,15 @@ class BundleReader:
                 continue
             problems.append(f"zip member not in manifest: {stray}")
 
+        # Vault members carry a manifest-declared destination (`root_rel`) that the
+        # decrypt path — not the zip name — writes to. It is untrusted (a hostile author
+        # owns the passphrase they share), so its legality is checked HERE, up front, the
+        # same as any payload name; the applier double-checks containment at stage time.
+        for vault_member in (self.manifest.get("vault", {}) or {}).get("members", []):
+            root_rel = vault_member.get("root_rel") or vault_member.get("home_rel", "")
+            for issue in member_name_problems("payload/home/" + str(root_rel)):
+                problems.append(f"vault member root_rel {root_rel!r}: {issue}")
+
         for name in payload_names:
             info = self.zf.getinfo(name)
             mode = (info.external_attr >> 16) & 0o170000
