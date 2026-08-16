@@ -230,6 +230,7 @@ _CSS = """
 @font-face { font-family:'Inter'; font-weight:400 700; font-display:swap;
              src:local('Inter'); }
 * { box-sizing: border-box; }
+:root { --display:'Collapse','Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 body { margin:0;
        background:radial-gradient(1000px 420px at 82% -6%,var(--gold-soft),transparent 70%),var(--bg);
        color:var(--fg);
@@ -238,8 +239,9 @@ body { margin:0;
 main { max-width: 60rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
 header.masthead { border-bottom:1px solid var(--line); padding-bottom:1.25rem;
                   margin-bottom:2rem; }
-h1 { font-size:1.7rem; font-weight:700; letter-spacing:-.01em; margin:0 0 .3rem; }
-h1 .wing { color:var(--gold); }
+h1 { font-family:var(--display); font-size:1.75rem; font-weight:700; letter-spacing:.01em;
+     line-height:1.1; margin:0 0 .3rem; }
+h1 .wing { color:var(--gold); font-family:'Inter',sans-serif; }
 .sub { color:var(--muted); margin:0; }
 h2 { font-size:1.1rem; font-weight:600; margin:2.2rem 0 .8rem;
      border-bottom:1px solid var(--line); padding-bottom:.4rem; }
@@ -268,16 +270,34 @@ footer { color:var(--muted); font-size:.8rem; margin-top:3rem;
 """
 
 
+def _collapse_face() -> str:
+    """Embed the Collapse brand display face (Bold) as a base64 data URI so the report's
+    Talaria wordmark keeps the Nous/Hermes look while staying a single self-contained file.
+    Falls back to '' (→ Inter via the --display stack) if the bundled font can't be read."""
+    import base64
+
+    try:
+        from importlib.resources import files as _files
+        blob = (_files("talaria.gui") / "assets" / "fonts"
+                / "Collapse-Bold.woff2").read_bytes()
+    except Exception:
+        return ""
+    b64 = base64.b64encode(blob).decode()
+    return ("@font-face{font-family:'Collapse';font-weight:700;font-style:normal;"
+            "font-display:swap;src:url(data:font/woff2;base64," + b64 + ") format('woff2');}")
+
+
 def render_html(data: ReportData) -> str:
     e = html.escape
     title = ("System Overview" if data.kind == "overview" else "Migration Report")
     parts: List[str] = []
     parts.append("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>")
+    # data: is needed for the base64-embedded Collapse face; no network origins are allowed.
     parts.append("<meta http-equiv='Content-Security-Policy' content=\"default-src "
-                 "'none'; style-src 'unsafe-inline'\">")
+                 "'none'; style-src 'unsafe-inline'; font-src data:\">")
     parts.append("<meta name='viewport' content='width=device-width,initial-scale=1'>")
     parts.append(f"<title>Talaria — {e(title)}</title>")
-    parts.append(f"<style>{_CSS}</style></head><body><main>")
+    parts.append(f"<style>{_collapse_face()}{_CSS}</style></head><body><main>")
     parts.append("<header class='masthead'>")
     parts.append(f"<h1><span class='wing'>⤞</span> Talaria — {e(title)}</h1>")
     parts.append("<p class='sub'>Talaria moves your Hermes agent to a new computer · "

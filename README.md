@@ -68,7 +68,7 @@ Zero dependencies — the core is pure Python 3.9+ standard library, so it runs 
 machine before Hermes is even installed there. Or carry the single self-contained file:
 
 ```bash
-python3 talaria.pyz                      # ~340 KiB, runs on any Python
+python3 talaria.pyz                      # ~430 KiB, runs on any Python
 ```
 
 <details>

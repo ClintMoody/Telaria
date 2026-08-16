@@ -112,6 +112,10 @@ class TestReports:
         assert "https://" not in html_text
         assert "<script src" not in html_text
         assert "talaria-data" in html_text  # JSON appendix
+        # The Collapse brand face is embedded as a base64 data: URI — self-contained,
+        # and the CSP must permit ONLY data: fonts (never a network font origin).
+        assert "font-src data:" in html_text
+        assert "src=http" not in html_text.replace(" ", "")  # no remote @font-face src
         import stat
 
         assert stat.S_IMODE(outputs["html"].stat().st_mode) == 0o600
