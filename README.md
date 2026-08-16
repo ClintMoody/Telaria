@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platforms-Linux%20·%20macOS%20·%20Windows%20·%20WSL%20·%20Termux-6a3de8?style=for-the-badge" alt="Platforms">
+  <img src="https://img.shields.io/badge/platforms-Linux%20·%20macOS%20·%20Windows%20·%20WSL%20·%20Termux-b8860b?style=for-the-badge" alt="Platforms">
   <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/dependencies-zero%20(stdlib)-1a7f37?style=for-the-badge" alt="Zero dependencies">
-  <img src="https://img.shields.io/badge/tests-269%20passing-1a7f37?style=for-the-badge" alt="269 tests">
+  <img src="https://img.shields.io/badge/tests-272%20passing-1a7f37?style=for-the-badge" alt="272 tests">
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT">
 </p>
 
@@ -68,7 +68,7 @@ Zero dependencies — the core is pure Python 3.9+ standard library, so it runs 
 machine before Hermes is even installed there. Or carry the single self-contained file:
 
 ```bash
-python3 talaria.pyz                      # 147 KiB, runs on any Python
+python3 talaria.pyz                      # ~340 KiB, runs on any Python
 ```
 
 <details>
@@ -127,7 +127,7 @@ Every row traces to a documented weakness of the other Hermes migration tool
 | Apply | ❌ extract over live install | ✅ transactional, journaled, auto-rollback |
 | Zip-slip / bombs | ❌ broken prefix guard | ✅ full hardening + adversarial tests |
 | Verification | ❌ none | ✅ per-file hashes + health checks |
-| Tests | ❌ none | ✅ 269 (unit, integration, crash-injection, GUI, browser, adversarial) |
+| Tests | ❌ none | ✅ 272 (unit, integration, crash-injection, GUI, browser, adversarial) |
 
 ## Prefer the terminal?
 
@@ -174,7 +174,7 @@ lose database WAL data) — all fixed with reproducing tests. That story is in
 
 ```bash
 pip install -e ".[dev]"
-python3 -m pytest                       # the full suite (269 tests)
+python3 -m pytest                       # the full suite (272 tests)
 python3 scripts/build_pyz.py            # single-file build
 python3 scripts/capture_screens.py      # regenerate the screenshots (light + dark)
 ```

@@ -36,7 +36,7 @@ hermes-migrate = "talaria.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-talaria = ["gui/assets/*"]
+talaria = ["gui/assets/*", "gui/assets/fonts/*.woff2", "gui/assets/fonts/*.md", "data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

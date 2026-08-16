@@ -163,7 +163,7 @@ class GuiHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-                         "img-src 'self' data:")
+                         "img-src 'self' data:; font-src 'self'")
         self.send_header("Cache-Control", "no-store")
 
     def _json(self, payload: dict, code: int = 200) -> None:
@@ -198,6 +198,7 @@ class GuiHandler(BaseHTTPRequestHandler):
             ctype = ("text/css" if name.endswith(".css")
                      else "application/javascript" if name.endswith(".js")
                      else "image/svg+xml" if name.endswith(".svg")
+                     else "font/woff2" if name.endswith(".woff2")
                      else "application/octet-stream")
             return self._serve_asset(name, ctype)
         if not self._authed():
@@ -269,12 +270,20 @@ class GuiHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ helpers
     def _serve_asset(self, name: str, ctype: str) -> None:
-        if "/" in name or "\\" in name or name.startswith("."):
+        import re as _re
+
+        # Allow flat asset names, plus a single vetted fonts/ subdir for the woff2 files.
+        flat_ok = "/" not in name and "\\" not in name and not name.startswith(".")
+        font_ok = bool(_re.fullmatch(r"fonts/[A-Za-z0-9._-]+\.woff2", name))
+        if not (flat_ok or font_ok):
             return self._deny(404, "no")
         blob: Optional[bytes] = None
         if _res_files is not None:
             try:
-                blob = (_res_files("talaria.gui") / "assets" / name).read_bytes()
+                node = _res_files("talaria.gui") / "assets"
+                for part in name.split("/"):
+                    node = node / part
+                blob = node.read_bytes()
             except (FileNotFoundError, OSError, TypeError):
                 blob = None
         if blob is None:

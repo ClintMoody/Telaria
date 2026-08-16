@@ -220,40 +220,48 @@ def render_md(data: ReportData) -> str:
 
 
 _CSS = """
-:root { --bg:#ffffff; --fg:#1a1d21; --muted:#5c6470; --line:#e4e7eb; --card:#f6f8fa;
-        --ok:#1a7f37; --warn:#9a6700; --fail:#cf222e; --accent:#6639ba; }
+:root { --bg:#f4f1e9; --fg:#1b1a17; --muted:#726e64; --line:#e2ddd0; --card:#fbfaf6;
+        --raised:#f0ece1; --ok:#1a7f37; --warn:#9a6700; --fail:#c0392f;
+        --gold:#8a6508; --gold-soft:rgba(138,101,8,0.09); color-scheme:light; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8d96a0; --line:#30363d; --card:#161b22;
-          --ok:#3fb950; --warn:#d29922; --fail:#f85149; --accent:#a371f7; } }
+  :root { --bg:#07070d; --fg:#e8e4dc; --muted:#9a968e; --line:#1e1e30; --card:#0f0f18;
+          --raised:#14142a; --ok:#46c26a; --warn:#d9a62e; --fail:#ef5f57;
+          --gold:#ffd700; --gold-soft:rgba(255,215,0,0.10); color-scheme:dark; } }
+@font-face { font-family:'Inter'; font-weight:400 700; font-display:swap;
+             src:local('Inter'); }
 * { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--fg);
-       font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+body { margin:0;
+       background:radial-gradient(1000px 420px at 82% -6%,var(--gold-soft),transparent 70%),var(--bg);
+       color:var(--fg);
+       font:15px/1.6 'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       -webkit-font-smoothing:antialiased; }
 main { max-width: 60rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
 header.masthead { border-bottom:1px solid var(--line); padding-bottom:1.25rem;
                   margin-bottom:2rem; }
-h1 { font-size:1.7rem; margin:0 0 .25rem; }
-h1 .wing { color:var(--accent); }
+h1 { font-size:1.7rem; font-weight:700; letter-spacing:-.01em; margin:0 0 .3rem; }
+h1 .wing { color:var(--gold); }
 .sub { color:var(--muted); margin:0; }
-h2 { font-size:1.15rem; margin:2.2rem 0 .8rem; border-bottom:1px solid var(--line);
-     padding-bottom:.35rem; }
+h2 { font-size:1.1rem; font-weight:600; margin:2.2rem 0 .8rem;
+     border-bottom:1px solid var(--line); padding-bottom:.4rem; }
 .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));
          gap:.75rem; margin:1.2rem 0; }
-.tile { background:var(--card); border:1px solid var(--line); border-radius:10px;
-        padding:.8rem .95rem; }
-.tile b { display:block; font-size:1.35rem; }
+.tile { background:var(--raised); border:1px solid var(--line); border-radius:10px;
+        padding:.85rem .95rem; }
+.tile b { display:block; font-size:1.35rem; font-weight:700; font-variant-numeric:tabular-nums; }
 .tile span { color:var(--muted); font-size:.82rem; }
 table { border-collapse:collapse; width:100%; font-size:.88rem; }
-th,td { text-align:left; padding:.4rem .6rem; border-bottom:1px solid var(--line);
+th,td { text-align:left; padding:.42rem .6rem; border-bottom:1px solid var(--line);
         vertical-align:top; }
 th { color:var(--muted); font-weight:600; }
 .wrap { overflow-x:auto; }
 .ok { color:var(--ok); } .warn { color:var(--warn); } .fail { color:var(--fail); }
 .badge { display:inline-block; border:1px solid var(--line); border-radius:999px;
-         padding:0 .55rem; font-size:.78rem; color:var(--muted); }
-code { background:var(--card); border:1px solid var(--line); border-radius:5px;
-       padding:.08rem .35rem; font-size:.85em; }
-.quote { font-style:italic; color:var(--muted); border-left:3px solid var(--accent);
-         padding-left:.8rem; margin:.8rem 0; }
+         padding:.02rem .55rem; font-size:.76rem; color:var(--muted); }
+code { font-family:'JetBrains Mono','SFMono-Regular','Cascadia Code','DejaVu Sans Mono',monospace;
+       background:var(--raised); border:1px solid var(--line); border-radius:5px;
+       padding:.08rem .38rem; font-size:.84em; }
+.quote { font-style:italic; color:var(--muted); border-left:2px solid var(--gold);
+         padding-left:.8rem; margin:.9rem 0; }
 footer { color:var(--muted); font-size:.8rem; margin-top:3rem;
          border-top:1px solid var(--line); padding-top:1rem; }
 @media print { body { background:#fff; color:#000; } .tiles { break-inside:avoid; } }
